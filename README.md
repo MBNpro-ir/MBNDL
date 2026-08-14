@@ -1,0 +1,171 @@
+<div align="center">
+
+# ⬇️ MBNDL
+
+### A friendly yt-dlp download manager for Windows and Android
+
+[![Release](https://img.shields.io/github/v/release/MBNpro-ir/MBNDL?display_name=tag&style=for-the-badge&logo=github)](https://github.com/MBNpro-ir/MBNDL/releases/latest)
+[![Build](https://img.shields.io/github/actions/workflow/status/MBNpro-ir/MBNDL/release.yml?style=for-the-badge&logo=githubactions&label=release)](https://github.com/MBNpro-ir/MBNDL/actions/workflows/release.yml)
+![Flutter](https://img.shields.io/badge/Flutter-3.44.6-02569B?style=for-the-badge&logo=flutter)
+![Platforms](https://img.shields.io/badge/Windows_x64_%7C_Android_ARM-6750A4?style=for-the-badge)
+
+[🪟 Download for Windows x64](https://github.com/MBNpro-ir/MBNDL/releases/latest/download/MBNDL-Windows-x64.zip)
+·
+[📱 Android 32-bit](https://github.com/MBNpro-ir/MBNDL/releases/latest/download/MBNDL-Android-arm32.apk)
+·
+[📱 Android 64-bit](https://github.com/MBNpro-ir/MBNDL/releases/latest/download/MBNDL-Android-arm64.apk)
+
+</div>
+
+## 🚀 End-user guide
+
+MBNDL lets you inspect a supported media link before downloading anything. You can select several complete formats, several separate video/audio streams, or ask MBNDL to intelligently merge one video stream with one audio stream.
+
+### Windows
+
+1. Download `MBNDL-Windows-x64.zip` from the latest release.
+2. Extract the whole ZIP to a folder; do not run the executable from inside the archive.
+3. Open `MBNDL.exe`.
+4. Paste a link, select **Inspect formats**, choose one or more outputs, then select **Add to downloads**.
+5. Find completed files in `Downloads/MBNDL` or open them from **History**.
+
+✅ `yt-dlp`, `ffmpeg.exe`, and `ffprobe.exe` are included in the Windows release. The user never has to visit a setup/download page. Updates for yt-dlp and FFmpeg remain available inside **Settings → Tools**.
+
+When closing MBNDL on Windows, choose **Minimize to tray**, **Exit**, or **Cancel**. A left-click on the tray icon restores and focuses the window; right-click exposes **Open** and **Close**.
+
+> Windows may display a SmartScreen notice for community-built unsigned releases. Verify that the file came from this repository’s Releases page before running it.
+
+### Android
+
+1. Choose the APK that matches the device:
+   - `arm32` for older 32-bit ARM phones.
+   - `arm64` for modern 64-bit ARM phones.
+2. Allow installation from your browser or file manager when Android asks.
+3. On first launch, complete the access setup screen.
+4. Paste a link and choose the desired formats.
+5. Completed media, covers, and subtitles are published under `Downloads/MBNDL`.
+
+MBNDL uses Android’s secure MediaStore API on Android 10 and newer. It does **not** request broad “all files” access. Android 9 and older request only the legacy storage permission required by those systems.
+
+### 🎛️ Choosing formats
+
+- **Ready to play** — formats that already contain video and audio.
+- **Video** — select one or several video-only streams.
+- **Audio** — select one or several audio-only streams.
+- **Smart merge** — select exactly one video and one audio stream, then enable this option to create one playable file with FFmpeg.
+- **Save cover / Save subtitles** — keep these artifacts with the download and expose them in History.
+
+### 🗂️ History and troubleshooting
+
+History supports search, status filters, date filters, file/artifact filters, sorting, grid/list views, retry, cancel, open, share, and coordinated deletion of the main file and related artifacts.
+
+If a download fails, MBNDL translates common yt-dlp/FFmpeg output into an actionable message—for example: authentication required, rate limited, unsupported URL, missing format, storage full, network failure, or FFmpeg merge failure.
+
+---
+
+<div dir="rtl">
+
+## 🇮🇷 راهنمای فارسی کاربران
+
+MBNDL یک دانلود منیجر ساده و مدرن بر پایهٔ yt-dlp است. قبل از دانلود، لینک بررسی می‌شود و شما می‌توانید چند کیفیت کامل، چند ویدئو یا صدای جداگانه، و یا ترکیب هوشمند یک ویدئو با یک صدا را انتخاب کنید.
+
+### 🪟 استفاده در ویندوز
+
+1. فایل `MBNDL-Windows-x64.zip` را از آخرین Release دانلود کنید.
+2. تمام ZIP را Extract کنید و سپس `MBNDL.exe` را اجرا کنید.
+3. لینک را در صفحهٔ اصلی قرار دهید و دکمهٔ **Inspect formats** را بزنید.
+4. کیفیت‌های موردنظر را انتخاب و با **Add to downloads** به صف دانلود اضافه کنید.
+5. خروجی‌ها در پوشهٔ `Downloads/MBNDL` و صفحهٔ History در دسترس‌اند.
+
+فایل‌های `yt-dlp`، `ffmpeg` و `ffprobe` از قبل داخل نسخهٔ ویندوز قرار دارند؛ بنابراین در اجرای اول صفحهٔ دانلود ابزار نمایش داده نمی‌شود. با این حال آپدیت داخلی هر دو ابزار از Settings همچنان فعال است.
+
+هنگام بستن برنامه می‌توانید یکی از گزینه‌های **Minimize to tray**، **Exit** یا **Cancel** را انتخاب کنید. کلیک چپ روی آیکون Tray پنجره را به جلو می‌آورد و کلیک راست گزینه‌های Open و Close را نشان می‌دهد.
+
+### 📱 استفاده در اندروید
+
+1. برای گوشی‌های قدیمی ۳۲ بیتی فایل `arm32` و برای گوشی‌های جدید ۶۴ بیتی فایل `arm64` را نصب کنید.
+2. در اجرای اول، صفحهٔ دسترسی‌های لازم را کامل کنید.
+3. فایل‌های نهایی، کاورها و زیرنویس‌ها در `Downloads/MBNDL` منتشر می‌شوند.
+
+در اندروید ۱۰ به بالا برنامه از MediaStore استفاده می‌کند و به مجوز خطرناک دسترسی به تمام فایل‌ها نیازی ندارد. فقط در اندروید ۹ و قدیمی‌تر مجوز قدیمی Storage درخواست می‌شود.
+
+### 🎚️ انتخاب کیفیت و تاریخچه
+
+- در تب **Ready to play** خروجی‌های آمادهٔ پخش را انتخاب کنید.
+- در تب‌های **Video** و **Audio** می‌توانید چند گزینه را هم‌زمان انتخاب کنید.
+- برای ساخت یک فایل نهایی از یک ویدئو و یک صدا، گزینهٔ **Smart merge** را فعال کنید.
+- صفحهٔ History دارای جست‌وجو، فیلتر تاریخ، وضعیت و نوع فایل، مرتب‌سازی، نمای لیستی/شبکه‌ای، Retry، Cancel، Share و نمایش کاور و زیرنویس است.
+- خطاهای رایج yt-dlp و FFmpeg با متن قابل‌فهم و راه‌حل پیشنهادی نمایش داده می‌شوند.
+
+</div>
+
+---
+
+## 🧩 Developer guide
+
+### Stack
+
+| Area | Implementation |
+|---|---|
+| UI | Flutter Material 3 / Material You |
+| State | Riverpod |
+| Navigation | GoRouter |
+| History | SQLite (`sqflite` / `sqflite_common_ffi`) |
+| Windows downloads | Official standalone yt-dlp + minimal FFmpeg/FFprobe bootstrap |
+| Android downloads | `youtubedl-android`, foreground service, and MediaStore publication |
+| Application ID | `com.mbn.dl` |
+
+### How a download works
+
+1. The app validates the URL and ensures the local download tools are ready.
+2. yt-dlp extracts metadata and formats using the active proxy, cookies, and JavaScript-runtime settings.
+3. The full-screen picker returns one or more independent download jobs.
+4. Each job is persisted to SQLite before execution, so progress and failures remain visible.
+5. yt-dlp downloads the selected stream; FFmpeg merges or post-processes only when required.
+6. MBNDL discovers the output, cover, and subtitle files and saves those relationships in History.
+7. Android copies completed artifacts into `Downloads/MBNDL` through MediaStore.
+
+### Windows offline bootstrap and updates
+
+Windows-only tools are installed by CMake under `data/tools`; they are not added to Flutter’s cross-platform asset bundle and therefore do not inflate Android APKs.
+
+- First launch copies the packaged official `yt-dlp.exe` into the writable application-data folder.
+- The packaged FFmpeg archive contains only `ffmpeg.exe`, `ffprobe.exe`, and upstream notices.
+- The FFmpeg updater reads the remote ZIP directory and uses HTTP Range requests to fetch only those two executables instead of downloading the complete distribution.
+- yt-dlp updates support stable, nightly, and master channels and verify the upstream digest when one is supplied.
+
+Refresh the Windows bootstrap assets from the project root:
+
+```powershell
+dart run tool/refresh_windows_bootstrap.dart
+```
+
+### Local development
+
+Requirements: Flutter `3.44.6`, Dart `3.12.2`, JDK 17, Visual Studio 2022 with Desktop C++, and the Android SDK for Android builds.
+
+```powershell
+flutter pub get
+flutter analyze
+flutter test
+flutter build windows --release
+flutter build apk --release --split-per-abi --target-platform android-arm,android-arm64
+```
+
+### 📁 Important locations
+
+```text
+lib/features/home/                 Home and full-screen format selection
+lib/features/history/              Searchable download library and artifact UI
+lib/services/downloader/           yt-dlp, FFmpeg, native Android bridge
+lib/services/permissions/          First-run permission contract
+android/app/src/main/kotlin/       Foreground download and MediaStore publication
+tool/refresh_windows_bootstrap.dart Minimal FFmpeg bootstrap refresher
+.github/workflows/release.yml       Tagged Windows/Android release pipeline
+```
+
+### 🤝 Contributing
+
+Keep platform-specific binaries out of Flutter’s shared asset list, preserve SQLite migrations, add actionable error messages for new engine failures, and run analysis plus tests before submitting changes.
+
+MBNDL downloads only content the user asks it to access. Users are responsible for respecting copyright, website terms, and local law. yt-dlp and FFmpeg are independent upstream projects distributed under their own licenses.

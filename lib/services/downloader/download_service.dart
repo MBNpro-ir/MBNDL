@@ -1,0 +1,1006 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
+import '../../shared/models/download_item.dart';
+import '../../shared/models/video_format.dart';
+import '../../features/settings/domain/yt_dlp_settings.dart';
+import '../logger/app_logger.dart';
+import '../database/database_service.dart';
+import '../storage/cookie_storage_service.dart';
+import 'ytdlp_manager.dart';
+import 'ffmpeg_manager.dart';
+import 'android_ytdlp_service.dart';
+import 'download_error_mapper.dart';
+
+class DownloadService {
+  static DownloadService? _instance;
+  static DownloadService get instance {
+    _instance ??= DownloadService._();
+    return _instance!;
+  }
+
+  DownloadService._();
+
+  String? _ytDlpPath;
+  String? _androidCheckedChannel;
+  List<String>? _detectedRuntimeArgs;
+  String? _cachedExtractionKey;
+  Map<String, dynamic>? _cachedExtraction;
+  final Map<int, Process> _activeDownloads = {};
+  final Set<int> _cancelledDownloads = {};
+
+  Future<void> initialize() async {
+    // Android uses the embedded native yt-dlp toolchain.
+    if (Platform.isAndroid) {
+      try {
+        await AndroidYtDlpService.instance.initialize();
+        AppLogger.info('Android yt-dlp service initialized');
+        return;
+      } catch (e) {
+        AppLogger.error('Failed to initialize Android yt-dlp service', e);
+        rethrow;
+      }
+    }
+
+    if (Platform.isIOS) {
+      throw UnsupportedError('iOS downloads are not implemented in this build');
+    }
+
+    // A Windows release contains both required toolchains. Copy them into the
+    // per-user writable directory before looking for system-wide fallbacks.
+    // This is offline and replaces the old first-run download page.
+    if (Platform.isWindows) {
+      final ready = await Future.wait([
+        YtDlpManager.instance.ensureBundledBootstrapReady(),
+        FFmpegManager.instance.ensureBundledBootstrapReady(),
+      ]);
+      if (!ready.every((value) => value)) {
+        AppLogger.warning(
+          'One or more bundled Windows download tools could not be prepared',
+        );
+      }
+    }
+
+    // For desktop platforms, use yt-dlp binary
+    // Try to get yt-dlp path from YtDlpManager (AppData)
+    _ytDlpPath = await YtDlpManager.instance.getYtDlpPath();
+
+    if (_ytDlpPath != null) {
+      AppLogger.info('yt-dlp found in AppData: $_ytDlpPath');
+      return;
+    }
+
+    // If not in AppData, check system PATH
+    try {
+      final result = await Process.run('yt-dlp', ['--version']);
+      if (result.exitCode == 0) {
+        _ytDlpPath = 'yt-dlp';
+        AppLogger.info(
+          'yt-dlp found in system PATH: version ${result.stdout.toString().trim()}',
+        );
+        return;
+      }
+    } catch (e) {
+      AppLogger.warning('yt-dlp not found in system PATH');
+    }
+
+    // Not found - will be downloaded on first use
+    AppLogger.warning('yt-dlp not found. Will be downloaded on first use.');
+  }
+
+  bool get isYtDlpAvailable => _ytDlpPath != null;
+
+  Future<bool> ensureFFmpegReady({
+    void Function(double progress)? onProgress,
+    void Function(String status)? onStatus,
+  }) {
+    return FFmpegManager.instance.ensureFFmpegReady(
+      onProgress: onProgress,
+      onStatus: onStatus,
+    );
+  }
+
+  /// Ensure yt-dlp is ready before use
+  Future<bool> ensureYtDlpReady({
+    Function(double)? onProgress,
+    Function(String)? onStatus,
+    String updateChannel = 'nightly',
+  }) async {
+    // Android bundles yt-dlp and QuickJS through youtubedl-android.
+    if (Platform.isAndroid) {
+      try {
+        onStatus?.call('Checking yt-dlp...');
+        final isInitialized = await AndroidYtDlpService.instance
+            .isInitialized();
+        if (!isInitialized) {
+          onStatus?.call('Initializing yt-dlp...');
+          await AndroidYtDlpService.instance.initialize();
+        }
+
+        if (_androidCheckedChannel != updateChannel) {
+          onStatus?.call('Checking the $updateChannel channel...');
+          final updated = await AndroidYtDlpService.instance
+              .updateYtDlpFromChannel(updateChannel);
+          _androidCheckedChannel = updateChannel;
+          if (!updated) {
+            AppLogger.warning(
+              'Android yt-dlp update failed; continuing with bundled version',
+            );
+          }
+        }
+        onProgress?.call(100.0);
+        return true;
+      } catch (e) {
+        AppLogger.error('Failed to initialize Android yt-dlp', e);
+        return false;
+      }
+    }
+
+    if (Platform.isIOS) return false;
+
+    // Verify an existing binary, then let the manager compare it with the
+    // selected official channel. A failed network check does not invalidate a
+    // working local executable.
+    var verifiedExisting = false;
+    if (_ytDlpPath != null) {
+      final file = File(_ytDlpPath!);
+      if (_ytDlpPath == 'yt-dlp' || await file.exists()) {
+        // Quick check - just verify it works
+        try {
+          final result = await Process.run(_ytDlpPath!, [
+            '--version',
+          ]).timeout(const Duration(seconds: 5));
+          if (result.exitCode == 0) {
+            verifiedExisting = true;
+            AppLogger.debug('Existing yt-dlp executable is healthy');
+          }
+        } catch (e) {
+          AppLogger.warning('yt-dlp verification failed: $e');
+        }
+      }
+    }
+
+    // Install, repair, or update the app-managed executable.
+    onStatus?.call('Preparing yt-dlp...');
+    final success = await YtDlpManager.instance.ensureYtDlpReady(
+      onProgress: onProgress,
+      onStatus: onStatus,
+      channel: updateChannel,
+    );
+
+    if (success) {
+      _ytDlpPath = await YtDlpManager.instance.getYtDlpPath();
+      return _ytDlpPath != null;
+    }
+
+    return verifiedExisting;
+  }
+
+  Future<Map<String, dynamic>> extractVideoInfo(
+    String url, {
+    YtDlpSettings? settings,
+  }) async {
+    // Use the native Android implementation.
+    if (Platform.isAndroid) {
+      return AndroidYtDlpService.instance.extractVideoInfo(
+        url,
+        settings: settings,
+      );
+    }
+
+    // Desktop implementation
+    if (_ytDlpPath == null) {
+      throw Exception('yt-dlp is not available');
+    }
+
+    AppLogger.info('Extracting video info for: $url');
+
+    try {
+      final jsonData = await _extractDesktopData(url, settings);
+      AppLogger.info('Video info extracted: ${jsonData['title']}');
+
+      return {
+        'title': jsonData['title'] ?? 'Unknown',
+        'thumbnail': jsonData['thumbnail'],
+        'duration': jsonData['duration'],
+        'uploader': jsonData['uploader'],
+        'filesize': jsonData['filesize'] ?? jsonData['filesize_approx'],
+      };
+    } catch (e, stackTrace) {
+      AppLogger.error('Error extracting video info', e, stackTrace);
+      rethrow;
+    }
+  }
+
+  /// Get available formats for a video URL
+  Future<List<VideoFormat>> getAvailableFormats(
+    String url, {
+    YtDlpSettings? settings,
+  }) async {
+    // Use the native Android implementation.
+    if (Platform.isAndroid) {
+      return AndroidYtDlpService.instance.getAvailableFormats(
+        url,
+        settings: settings,
+      );
+    }
+
+    // Desktop implementation
+    if (_ytDlpPath == null) {
+      throw Exception('yt-dlp is not available');
+    }
+
+    AppLogger.info('Fetching available formats for: $url');
+
+    try {
+      final jsonData = await _extractDesktopData(url, settings);
+      final formatsJson = jsonData['formats'] as List<dynamic>?;
+
+      if (formatsJson == null || formatsJson.isEmpty) {
+        AppLogger.warning('No formats found for URL: $url');
+        return [];
+      }
+
+      final formats = formatsJson
+          .map((f) => VideoFormat.fromJson(f as Map<String, dynamic>))
+          .toList();
+
+      AppLogger.info('Found ${formats.length} formats');
+      return formats;
+    } catch (e, stackTrace) {
+      AppLogger.error('Error fetching formats', e, stackTrace);
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> _extractDesktopData(
+    String url,
+    YtDlpSettings? settings,
+  ) async {
+    final args = <String>[
+      ...(settings?.toExtractionArgs() ??
+          const ['--ignore-config', '--no-color']),
+    ];
+    if (!args.contains('--js-runtimes') && !args.contains('--no-js-runtimes')) {
+      args.addAll(await _detectJsRuntime());
+    }
+
+    final selectedCookie = CookieStorageService.instance
+        .getSelectedCookieFilePath();
+    if (selectedCookie != null && selectedCookie.isNotEmpty) {
+      args.addAll(['--cookies', selectedCookie]);
+    }
+
+    final cacheKey = '$url\u0000${args.join('\u0000')}';
+    if (_cachedExtractionKey == cacheKey && _cachedExtraction != null) {
+      return _cachedExtraction!;
+    }
+
+    final result = await Process.run(_ytDlpPath!, [
+      ...args,
+      '--dump-single-json',
+      '--skip-download',
+      '--no-playlist',
+      url,
+    ]);
+    if (result.exitCode != 0) {
+      final error = result.stderr.toString().trim();
+      throw Exception(error.isEmpty ? 'yt-dlp extraction failed' : error);
+    }
+
+    final data = jsonDecode(result.stdout.toString()) as Map<String, dynamic>;
+    _cachedExtractionKey = cacheKey;
+    _cachedExtraction = data;
+    return data;
+  }
+
+  Future<List<String>> _detectJsRuntime() async {
+    if (_detectedRuntimeArgs != null) return _detectedRuntimeArgs!;
+
+    for (final runtime in const ['deno', 'node', 'qjs', 'bun']) {
+      try {
+        final result = await Process.run(runtime, const [
+          '--version',
+        ]).timeout(const Duration(seconds: 3));
+        if (result.exitCode == 0) {
+          final ytDlpName = runtime == 'qjs' ? 'quickjs' : runtime;
+          _detectedRuntimeArgs = ['--js-runtimes', ytDlpName];
+          AppLogger.info('Using JavaScript runtime: $ytDlpName');
+          return _detectedRuntimeArgs!;
+        }
+      } catch (_) {
+        // Try the next supported runtime.
+      }
+    }
+
+    _detectedRuntimeArgs = const [];
+    AppLogger.warning(
+      'No desktop JavaScript runtime detected; YouTube formats may be limited',
+    );
+    return _detectedRuntimeArgs!;
+  }
+
+  /// Group formats by type (combined, video-only, audio-only)
+  Map<String, List<VideoFormat>> groupFormats(List<VideoFormat> formats) {
+    final combined = <VideoFormat>[];
+    final videoOnly = <VideoFormat>[];
+    final audioOnly = <VideoFormat>[];
+
+    for (final format in formats) {
+      if (format.hasVideo && format.hasAudio) {
+        combined.add(format);
+      } else if (format.hasVideo) {
+        videoOnly.add(format);
+      } else if (format.hasAudio) {
+        audioOnly.add(format);
+      }
+    }
+
+    // Sort by quality (height) descending
+    combined.sort((a, b) => (b.height ?? 0).compareTo(a.height ?? 0));
+    videoOnly.sort((a, b) => (b.height ?? 0).compareTo(a.height ?? 0));
+    audioOnly.sort((a, b) => (b.abr ?? 0).compareTo(a.abr ?? 0));
+
+    return {'combined': combined, 'video': videoOnly, 'audio': audioOnly};
+  }
+
+  Future<void> startDownload({
+    required DownloadItem item,
+    required YtDlpSettings settings,
+    required Function(DownloadItem) onUpdate,
+  }) async {
+    // Use the native Android implementation.
+    if (Platform.isAndroid) {
+      return await AndroidYtDlpService.instance.startDownload(
+        item: item,
+        settings: settings,
+        onUpdate: onUpdate,
+      );
+    }
+
+    // Desktop implementation
+    if (_ytDlpPath == null) {
+      throw Exception('yt-dlp is not available');
+    }
+
+    if (item.id == null) {
+      throw Exception('Download item must have an ID');
+    }
+
+    // Determine base output directory
+    String baseOutputDir;
+    if (settings.downloadPath.isNotEmpty) {
+      baseOutputDir = settings.downloadPath;
+    } else {
+      // Use default path based on platform
+      if (Platform.isWindows) {
+        final downloadsDir = await getDownloadsDirectory();
+        final root =
+            downloadsDir?.path ??
+            (await getApplicationDocumentsDirectory()).path;
+        baseOutputDir = '$root${Platform.pathSeparator}MBNDL';
+      } else {
+        final downloadsDir = await getDownloadsDirectory();
+        baseOutputDir = downloadsDir == null
+            ? (await getApplicationDocumentsDirectory()).path
+            : '${downloadsDir.path}${Platform.pathSeparator}MBNDL';
+      }
+    }
+
+    // Ensure base directory exists
+    final dir = Directory(baseOutputDir);
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+      AppLogger.info('Created base download directory: $baseOutputDir');
+    }
+
+    // Create subdirectories for organized storage
+    final tempDir = Directory('$baseOutputDir${Platform.pathSeparator}temp');
+    final videoDir = Directory('$baseOutputDir${Platform.pathSeparator}Video');
+    final audioDir = Directory('$baseOutputDir${Platform.pathSeparator}Audio');
+    final coverDir = Directory('$baseOutputDir${Platform.pathSeparator}Cover');
+
+    for (final subDir in [tempDir, videoDir, audioDir, coverDir]) {
+      if (!await subDir.exists()) {
+        await subDir.create(recursive: true);
+        AppLogger.info('Created directory: ${subDir.path}');
+      }
+    }
+
+    // Determine download type from settings
+    final downloadType = settings.downloadType ?? 'combined';
+    final isAudioOnly = downloadType == 'audio' || settings.extractAudio;
+    final isSeparateDownload = downloadType == 'separate';
+
+    // Build yt-dlp args with paths template for organized file storage
+    final args = <String>[
+      ...settings.toYtDlpArgs(),
+      '--newline',
+      '--progress',
+      '--progress-template',
+      'download:MBN_PROGRESS:%(progress._percent_str)s',
+      '--print',
+      'after_move:MBN_FILE:%(filepath)j',
+
+      // Paths configuration using yt-dlp's -P option for organized storage
+      // temp: temporary files during download
+      '-P', 'temp:${tempDir.path}',
+    ];
+
+    // Add FFmpeg location if available
+    final ffmpegPath = await FFmpegManager.instance.getFFmpegPath();
+    if (ffmpegPath != null) {
+      // Get the directory containing ffmpeg
+      final ffmpegDir = File(ffmpegPath).parent.path;
+      args.addAll(['--ffmpeg-location', ffmpegDir]);
+      AppLogger.info('Using FFmpeg location: $ffmpegDir');
+    }
+
+    // Add cookie file if one is selected
+    final cookieFilePath = CookieStorageService.instance
+        .getSelectedCookieFilePath();
+    if (cookieFilePath != null) {
+      args.addAll(['--cookies', cookieFilePath]);
+      AppLogger.info('Using cookie file: $cookieFilePath');
+    }
+
+    // For separate video+audio downloads, download each file individually
+    if (isSeparateDownload) {
+      // Split the format string
+      final formats = settings.selectedFormatId!.split('+');
+      if (formats.length == 2) {
+        final videoFormat = formats[0];
+        final audioFormat = formats[1];
+
+        // Clear args and rebuild for separate downloads
+        args.clear();
+
+        // Download video only (without audio) to Video folder
+        args.addAll([
+          ...settings.toYtDlpArgs(),
+          '-f',
+          videoFormat,
+          '--newline',
+          '--progress',
+          '--progress-template',
+          'download:MBN_PROGRESS:%(progress._percent_str)s',
+          '--print',
+          'after_move:MBN_FILE:%(filepath)j',
+          '-P',
+          'temp:${tempDir.path}',
+          '-P',
+          'home:${videoDir.path}',
+          '-o',
+          '%(title)s_video.%(ext)s',
+        ]);
+
+        // Add subtitle/thumbnail config if needed
+        if (settings.downloadSubtitlesEnabled) {
+          args.addAll([
+            '--write-subs',
+            '--sub-langs',
+            settings.subtitleLanguages,
+            '--sub-format',
+            settings.subtitleFormat,
+            '-P',
+            'subtitle:${videoDir.path}',
+          ]);
+        }
+
+        if (settings.downloadThumbnailEnabled) {
+          args.addAll([
+            '--write-thumbnail',
+            '--convert-thumbnails',
+            'jpg',
+            '-P',
+            'thumbnail:${coverDir.path}',
+          ]);
+        }
+
+        args.add(item.url);
+
+        // Audio will be downloaded after video completes (handled in exitCode == 0 section)
+        AppLogger.info(
+          'Separate download mode: Video format $videoFormat, Audio format $audioFormat',
+        );
+      }
+    } else if (isAudioOnly) {
+      // Audio-only goes to Audio folder
+      args.addAll([
+        '-P',
+        'home:${audioDir.path}',
+        '-o',
+        '%(title)s [%(format_id)s].%(ext)s',
+      ]);
+    } else {
+      // Regular video goes to Video folder
+      args.addAll([
+        '-P',
+        'home:${videoDir.path}',
+        '-o',
+        '%(title)s [%(format_id)s].%(ext)s',
+      ]);
+    }
+
+    // Add subtitle/thumbnail config for non-separate downloads
+    if (!isSeparateDownload) {
+      if (settings.downloadSubtitlesEnabled) {
+        args.addAll([
+          '--write-subs',
+          '--sub-langs', settings.subtitleLanguages,
+          '--sub-format', settings.subtitleFormat,
+          '-P', 'subtitle:${videoDir.path}', // Save subtitles with video
+        ]);
+      }
+
+      if (settings.downloadThumbnailEnabled) {
+        args.addAll([
+          '--write-thumbnail',
+          '--convert-thumbnails', 'jpg',
+          '-P', 'thumbnail:${coverDir.path}', // Save covers in Cover folder
+        ]);
+      }
+
+      args.add(item.url);
+    }
+
+    // Settings rebuilt for separate streams above; add runtime, cookies and
+    // FFmpeg immediately before the URL so all modes share the same engine.
+    final sharedArgs = <String>[];
+    if (!args.contains('--js-runtimes') && !args.contains('--no-js-runtimes')) {
+      sharedArgs.addAll(await _detectJsRuntime());
+    }
+    if (ffmpegPath != null) {
+      sharedArgs.addAll(['--ffmpeg-location', File(ffmpegPath).parent.path]);
+    }
+    if (cookieFilePath != null) {
+      sharedArgs.addAll(['--cookies', cookieFilePath]);
+    }
+    final urlIndex = args.lastIndexOf(item.url);
+    if (urlIndex >= 0) {
+      args.insertAll(urlIndex, sharedArgs);
+    } else {
+      args.addAll([...sharedArgs, item.url]);
+    }
+
+    AppLogger.info('Starting download for: ${item.title}');
+    AppLogger.info('Base output directory: $baseOutputDir');
+    AppLogger.debug('yt-dlp args: ${args.join(' ')}');
+
+    // Prepare environment with ffmpeg path
+    Map<String, String>? environment;
+    if (ffmpegPath != null) {
+      final ffmpegDir = File(ffmpegPath).parent.path;
+      final currentPath = Platform.environment['PATH'] ?? '';
+      environment = {
+        ...Platform.environment,
+        'PATH': '$ffmpegDir${Platform.isWindows ? ';' : ':'}$currentPath',
+      };
+      AppLogger.info('Added FFmpeg directory to PATH: $ffmpegDir');
+    }
+
+    try {
+      final downloadStartedAt = DateTime.now();
+      final process = await Process.start(
+        _ytDlpPath!,
+        args,
+        environment: environment,
+      );
+      _activeDownloads[item.id!] = process;
+
+      // Update status to downloading
+      var updatedItem = item.copyWith(
+        status: DownloadStatus.downloading,
+        progress: 0.0,
+      );
+      await DatabaseService.instance.updateDownload(updatedItem);
+      onUpdate(updatedItem);
+
+      final progressRegex = RegExp(
+        r'^(?:MBN_PROGRESS:\s*|\[download\]\s+)(\d+\.?\d*)%',
+      );
+      final filenameRegex = RegExp(r'\[download\] Destination: (.+)');
+      String? filePath;
+      final stderrLines = <String>[];
+
+      // Use systemEncoding decoder for Windows to handle Unicode properly
+      final textDecoder = Platform.isWindows
+          ? systemEncoding.decoder
+          : const Utf8Decoder(allowMalformed: true);
+
+      // Handle stdout with proper encoding
+      process.stdout
+          .transform(textDecoder)
+          .transform(const LineSplitter())
+          .listen((line) {
+            AppLogger.trace('yt-dlp: $line');
+
+            // Extract progress
+            final progressMatch = progressRegex.firstMatch(line);
+            if (progressMatch != null) {
+              final progress = double.tryParse(progressMatch.group(1)!) ?? 0.0;
+              updatedItem = updatedItem.copyWith(progress: progress);
+              onUpdate(updatedItem);
+            }
+
+            // Extract filename from [download] Destination line or --print output
+            if (line.startsWith('MBN_FILE:')) {
+              final encodedPath = line.substring('MBN_FILE:'.length).trim();
+              try {
+                filePath = jsonDecode(encodedPath) as String;
+              } catch (_) {
+                filePath = encodedPath.replaceAll('"', '');
+              }
+              AppLogger.debug('Final file path: $filePath');
+            } else {
+              final filenameMatch = filenameRegex.firstMatch(line);
+              if (filenameMatch != null) {
+                filePath = filenameMatch.group(1);
+                AppLogger.debug('Download destination: $filePath');
+              }
+            }
+          });
+
+      // Handle stderr with proper encoding
+      process.stderr
+          .transform(textDecoder)
+          .transform(const LineSplitter())
+          .listen((line) {
+            AppLogger.warning('yt-dlp stderr: $line');
+            stderrLines.add(line);
+            if (stderrLines.length > 80) stderrLines.removeAt(0);
+          });
+
+      // Wait for completion
+      final exitCode = await process.exitCode;
+      _activeDownloads.remove(item.id);
+
+      if (_cancelledDownloads.remove(item.id)) {
+        updatedItem = updatedItem.copyWith(
+          status: DownloadStatus.cancelled,
+          errorMessage: 'Download cancelled by user',
+        );
+        await DatabaseService.instance.updateDownload(updatedItem);
+        onUpdate(updatedItem);
+        return;
+      }
+
+      if (exitCode == 0) {
+        // If this was a separate video+audio download, now download the audio
+        if (isSeparateDownload && settings.selectedFormatId!.contains('+')) {
+          final formats = settings.selectedFormatId!.split('+');
+          if (formats.length == 2) {
+            final audioFormat = formats[1];
+
+            AppLogger.info(
+              'Video download complete, starting audio download...',
+            );
+
+            // Build audio download args
+            final audioArgs = <String>[
+              ...settings.toExtractionArgs(),
+              '-f',
+              audioFormat,
+              '--newline',
+              '--progress',
+              '--progress-template',
+              'download:MBN_PROGRESS:%(progress._percent_str)s',
+              '--print',
+              'after_move:MBN_FILE:%(filepath)j',
+              '-P',
+              'temp:${tempDir.path}',
+              '-P',
+              'home:${audioDir.path}',
+              '-o',
+              '%(title)s_audio.%(ext)s',
+              ...sharedArgs,
+              item.url,
+            ];
+
+            AppLogger.debug('Audio download args: ${audioArgs.join(' ')}');
+
+            // Start audio download process
+            final audioProcess = await Process.start(
+              _ytDlpPath!,
+              audioArgs,
+              environment: environment,
+            );
+            _activeDownloads[item.id!] = audioProcess;
+
+            // Update progress to show audio is downloading
+            updatedItem = updatedItem.copyWith(
+              progress: 50.0, // Video done, now audio
+            );
+            onUpdate(updatedItem);
+
+            String? audioFilePath;
+
+            // Monitor audio download progress
+            audioProcess.stdout
+                .transform(textDecoder)
+                .transform(const LineSplitter())
+                .listen((line) {
+                  AppLogger.trace('yt-dlp audio: $line');
+
+                  // Extract audio progress (map it to 50-100% range)
+                  final progressMatch = progressRegex.firstMatch(line);
+                  if (progressMatch != null) {
+                    final audioProgress =
+                        double.tryParse(progressMatch.group(1)!) ?? 0.0;
+                    final totalProgress = 50.0 + (audioProgress / 2); // 50-100%
+                    updatedItem = updatedItem.copyWith(progress: totalProgress);
+                    onUpdate(updatedItem);
+                  }
+
+                  // Extract audio file path
+                  if (line.startsWith('MBN_FILE:')) {
+                    final encodedPath = line
+                        .substring('MBN_FILE:'.length)
+                        .trim();
+                    try {
+                      audioFilePath = jsonDecode(encodedPath) as String;
+                    } catch (_) {
+                      audioFilePath = encodedPath.replaceAll('"', '');
+                    }
+                    AppLogger.debug('Audio file path: $audioFilePath');
+                  }
+                });
+
+            audioProcess.stderr
+                .transform(textDecoder)
+                .transform(const LineSplitter())
+                .listen((line) {
+                  AppLogger.warning('yt-dlp audio stderr: $line');
+                });
+
+            // Wait for audio download to complete
+            final audioExitCode = await audioProcess.exitCode;
+            _activeDownloads.remove(item.id);
+
+            if (_cancelledDownloads.remove(item.id)) {
+              updatedItem = updatedItem.copyWith(
+                status: DownloadStatus.cancelled,
+                errorMessage: 'Download cancelled by user',
+              );
+              await DatabaseService.instance.updateDownload(updatedItem);
+              onUpdate(updatedItem);
+              return;
+            }
+
+            if (audioExitCode != 0) {
+              AppLogger.error(
+                'Audio download failed with exit code: $audioExitCode',
+              );
+              // Continue anyway, video was successful
+            } else {
+              AppLogger.info('Audio download completed successfully');
+            }
+          }
+        }
+
+        // Download successful
+        File? downloadedFile;
+        int? fileSize;
+
+        // Search for the downloaded file
+        if (filePath != null) {
+          downloadedFile = File(filePath!);
+        }
+
+        // If file doesn't exist or path is null, search for it in the directory
+        // This handles Unicode filenames that may not be captured correctly
+        if (downloadedFile == null || !await downloadedFile.exists()) {
+          if (filePath != null) {
+            AppLogger.warning('File not found at captured path: $filePath');
+          } else {
+            AppLogger.warning(
+              'No file path captured from yt-dlp, searching directory...',
+            );
+          }
+
+          // Determine which directory to search in
+          Directory searchDir;
+          if (isAudioOnly) {
+            searchDir = audioDir;
+          } else {
+            searchDir = videoDir;
+          }
+
+          if (await searchDir.exists()) {
+            // Get all files in the directory
+            final files = await searchDir
+                .list()
+                .where((e) => e is File)
+                .toList();
+
+            // Find the most recently modified file
+            File? mostRecent;
+            DateTime? mostRecentTime;
+
+            for (final entity in files) {
+              if (entity is File) {
+                final stat = await entity.stat();
+                if (mostRecentTime == null ||
+                    stat.modified.isAfter(mostRecentTime)) {
+                  mostRecentTime = stat.modified;
+                  mostRecent = entity;
+                }
+              }
+            }
+
+            if (mostRecent != null) {
+              downloadedFile = mostRecent;
+              filePath = mostRecent.path;
+              AppLogger.info('Found downloaded file by search: $filePath');
+            }
+          }
+        }
+
+        if (downloadedFile != null && await downloadedFile.exists()) {
+          fileSize = await downloadedFile.length();
+        }
+
+        final artifacts = await _discoverArtifacts(
+          primaryFile: downloadedFile,
+          directories: [videoDir, audioDir, coverDir],
+          startedAt: downloadStartedAt,
+        );
+
+        updatedItem = updatedItem.copyWith(
+          status: DownloadStatus.completed,
+          progress: 100.0,
+          filePath: filePath,
+          fileSize: fileSize,
+          completedAt: DateTime.now(),
+          coverPath: artifacts.coverPath,
+          subtitlePaths: artifacts.subtitlePaths,
+          relatedFilePaths: artifacts.relatedPaths,
+          clearErrorMessage: true,
+          clearCurrentPhase: true,
+        );
+
+        await DatabaseService.instance.updateDownload(updatedItem);
+        onUpdate(updatedItem);
+        AppLogger.info('Download completed successfully: ${item.title}');
+      } else {
+        // Download failed
+        final friendly = DownloadErrorMapper.fromText(
+          stderrLines.isEmpty
+              ? 'yt-dlp exited with code $exitCode'
+              : stderrLines.join('\n'),
+        );
+        updatedItem = updatedItem.copyWith(
+          status: DownloadStatus.failed,
+          errorMessage: friendly.displayText,
+        );
+
+        await DatabaseService.instance.updateDownload(updatedItem);
+        onUpdate(updatedItem);
+        AppLogger.error('Download failed: ${item.title}');
+      }
+    } catch (e, stackTrace) {
+      _activeDownloads.remove(item.id);
+
+      final errorMessage = DownloadErrorMapper.from(e).displayText;
+      final updatedItem = item.copyWith(
+        status: DownloadStatus.failed,
+        errorMessage: errorMessage,
+      );
+
+      await DatabaseService.instance.updateDownload(updatedItem);
+      onUpdate(updatedItem);
+      AppLogger.error('Download error for ${item.title}', e, stackTrace);
+      rethrow;
+    }
+  }
+
+  Future<void> cancelDownload(int downloadId) async {
+    // Use the native Android implementation.
+    if (Platform.isAndroid) {
+      return await AndroidYtDlpService.instance.cancelDownload(downloadId);
+    }
+
+    // Desktop implementation
+    final process = _activeDownloads[downloadId];
+    if (process != null) {
+      _cancelledDownloads.add(downloadId);
+      process.kill();
+      _activeDownloads.remove(downloadId);
+      AppLogger.info('Download cancelled: $downloadId');
+    }
+  }
+
+  Future<void> retryDownload({
+    required DownloadItem item,
+    required YtDlpSettings settings,
+    required Function(DownloadItem) onUpdate,
+  }) async {
+    AppLogger.info('Retrying download: ${item.title}');
+
+    final updatedItem = item.copyWith(
+      status: DownloadStatus.pending,
+      progress: 0.0,
+      clearErrorMessage: true,
+      clearCurrentPhase: true,
+    );
+
+    await DatabaseService.instance.updateDownload(updatedItem);
+    onUpdate(updatedItem);
+
+    await startDownload(
+      item: updatedItem,
+      settings: settings,
+      onUpdate: onUpdate,
+    );
+  }
+
+  bool isDownloading(int? downloadId) {
+    if (downloadId == null) return false;
+    return _activeDownloads.containsKey(downloadId);
+  }
+
+  Future<_DownloadedArtifacts> _discoverArtifacts({
+    required File? primaryFile,
+    required List<Directory> directories,
+    required DateTime startedAt,
+  }) async {
+    final related = <String>[];
+    final subtitles = <String>[];
+    String? cover;
+    final primaryPath = primaryFile?.absolute.path;
+    final primaryBase = primaryFile == null
+        ? null
+        : p.basenameWithoutExtension(primaryFile.path);
+    final earliest = startedAt.subtract(const Duration(seconds: 5));
+    const imageExtensions = {'.jpg', '.jpeg', '.png', '.webp', '.avif'};
+    const subtitleExtensions = {
+      '.srt',
+      '.vtt',
+      '.ass',
+      '.ssa',
+      '.lrc',
+      '.ttml',
+    };
+
+    for (final directory in directories) {
+      if (!await directory.exists()) continue;
+      await for (final entity in directory.list()) {
+        if (entity is! File || entity.absolute.path == primaryPath) continue;
+        final extension = p.extension(entity.path).toLowerCase();
+        if (extension == '.part' || extension == '.ytdl') continue;
+        final stat = await entity.stat();
+        final base = p.basenameWithoutExtension(entity.path);
+        final belongsToDownload = primaryBase == null
+            ? stat.modified.isAfter(earliest)
+            : base == primaryBase ||
+                  base.startsWith('$primaryBase.') ||
+                  primaryBase.startsWith('$base.');
+        if (!belongsToDownload || stat.modified.isBefore(earliest)) continue;
+
+        related.add(entity.path);
+        if (imageExtensions.contains(extension)) cover ??= entity.path;
+        if (subtitleExtensions.contains(extension)) subtitles.add(entity.path);
+      }
+    }
+
+    return _DownloadedArtifacts(
+      coverPath: cover,
+      subtitlePaths: subtitles,
+      relatedPaths: related,
+    );
+  }
+}
+
+class _DownloadedArtifacts {
+  const _DownloadedArtifacts({
+    required this.coverPath,
+    required this.subtitlePaths,
+    required this.relatedPaths,
+  });
+
+  final String? coverPath;
+  final List<String> subtitlePaths;
+  final List<String> relatedPaths;
+}
