@@ -38,6 +38,7 @@
         android:label="MBNDL"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
+        android:allowBackup="false"
         android:extractNativeLibs="true">
         <activity
             android:name=".MainActivity"

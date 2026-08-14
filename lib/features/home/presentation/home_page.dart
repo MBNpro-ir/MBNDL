@@ -11,12 +11,15 @@ import 'package:go_router/go_router.dart';
 import '../../../services/downloader/download_error_mapper.dart';
 import '../../../services/downloader/download_service.dart';
 import '../../../services/logger/app_logger.dart';
+import '../../../services/storage/download_path_service.dart';
 import '../../../shared/models/download_item.dart';
 import '../../../shared/models/recent_link.dart';
 import '../../../shared/models/video_format.dart';
 import '../../../shared/providers/downloads_provider.dart';
 import '../../../shared/providers/recent_links_provider.dart';
 import '../../../shared/providers/settings_provider.dart';
+import '../../../shared/providers/youtube_auth_provider.dart';
+import '../../../shared/utils/media_url_classifier.dart';
 import 'format_selection_page.dart';
 
 class HomePage extends ConsumerStatefulWidget {
@@ -146,11 +149,22 @@ class _HomePageState extends ConsumerState<HomePage> {
         title: title,
         thumbnail: thumbnail,
         formats: formats,
+        mediaId: info['id']?.toString(),
       );
     } catch (error, stackTrace) {
       AppLogger.error('Could not inspect URL', error, stackTrace);
       if (!mounted || cancelled) return;
       _closeRootDialog();
+      if (MediaUrlClassifier.isYouTubeUrl(url) &&
+          DownloadErrorMapper.isYouTubeAuthenticationError(error)) {
+        ref
+            .read(youtubeAuthIssueProvider.notifier)
+            .report(
+              url: url,
+              message: DownloadErrorMapper.from(error).displayText,
+            );
+        return;
+      }
       _showFriendlyError(error);
     } finally {
       status.dispose();
@@ -206,11 +220,13 @@ class _HomePageState extends ConsumerState<HomePage> {
           .getFormats()
           .map(VideoFormat.fromJson)
           .toList(growable: false);
+      final info = link.getVideoInfo();
       await _openFormatPage(
         url: link.url,
         title: link.title,
         thumbnail: link.thumbnail,
         formats: formats,
+        mediaId: info['id']?.toString(),
       );
     } catch (error, stackTrace) {
       AppLogger.error('Could not open cached formats', error, stackTrace);
@@ -223,13 +239,53 @@ class _HomePageState extends ConsumerState<HomePage> {
     required String title,
     required String? thumbnail,
     required List<VideoFormat> formats,
+    String? mediaId,
   }) async {
+    final previousDownloads = <String, int>{};
+    final downloads = ref.read(downloadsProvider).asData?.value ?? const [];
+    for (final item in downloads) {
+      final selector = item.formatId;
+      final hasArtifact =
+          item.publicUris.isNotEmpty ||
+          (item.filePath != null && File(item.filePath!).existsSync());
+      if (item.status == DownloadStatus.completed &&
+          item.url == url &&
+          selector != null &&
+          selector.isNotEmpty &&
+          hasArtifact) {
+        previousDownloads.update(
+          selector,
+          (count) => count + 1,
+          ifAbsent: () => 1,
+        );
+      }
+    }
+    if (mediaId != null && mediaId.isNotEmpty) {
+      final settings = ref.read(ytDlpSettingsProvider);
+      final fileCounts = await DownloadPathService.instance
+          .findExistingFormatSelectors(
+            mediaId: mediaId,
+            downloadPath: settings.downloadPath,
+          );
+      for (final entry in fileCounts.entries) {
+        previousDownloads.update(
+          entry.key,
+          (historyCount) =>
+              historyCount > entry.value ? historyCount : entry.value,
+          ifAbsent: () => entry.value,
+        );
+      }
+      if (!mounted) return;
+    }
     final selection = await Navigator.of(context, rootNavigator: true)
         .push<FormatSelectionResult>(
           MaterialPageRoute(
             fullscreenDialog: true,
-            builder: (_) =>
-                FormatSelectionPage(formats: formats, videoTitle: title),
+            builder: (_) => FormatSelectionPage(
+              formats: formats,
+              videoTitle: title,
+              previousDownloads: previousDownloads,
+            ),
           ),
         );
     if (selection == null || selection.jobs.isEmpty || !mounted) return;
@@ -270,6 +326,10 @@ class _HomePageState extends ConsumerState<HomePage> {
         final settings = baseSettings.copyWith(
           selectedFormatId: job.formatSelector,
           downloadType: job.downloadType,
+          outputTemplate:
+              '%(title)s [%(id)s] [%(format_id)s]'
+              '${job.wasDownloadedBefore ? ' (copy ${job.previousDownloadCount + 1})' : ''}'
+              '.%(ext)s',
           downloadSubtitlesEnabled: selection.downloadSubtitles,
           downloadThumbnailEnabled: selection.downloadThumbnail,
           extractAudio: job.downloadType == 'audio'

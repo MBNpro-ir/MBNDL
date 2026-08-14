@@ -3,6 +3,20 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import '../logger/app_logger.dart';
 
+class AndroidDownloadStorageStatus {
+  const AndroidDownloadStorageStatus({
+    required this.ready,
+    required this.workingPath,
+    required this.publicPath,
+    required this.message,
+  });
+
+  final bool ready;
+  final String workingPath;
+  final String publicPath;
+  final String message;
+}
+
 /// Service to manage download paths and temporary directories
 class DownloadPathService {
   static const _androidChannel = MethodChannel('com.mbn.dl/ytdlp');
@@ -27,7 +41,14 @@ class DownloadPathService {
         final path = await _androidChannel.invokeMethod<String>(
           'getDownloadPath',
         );
-        return path ?? '';
+        if (path != null && path.trim().isNotEmpty) return path;
+        final support = await getApplicationSupportDirectory();
+        final fallback = Directory(
+          '${support.path}${Platform.pathSeparator}downloads'
+          '${Platform.pathSeparator}MBNDL',
+        );
+        await fallback.create(recursive: true);
+        return fallback.path;
       } else if (Platform.isMacOS || Platform.isLinux) {
         final downloadsDir = await getDownloadsDirectory();
         return downloadsDir == null
@@ -37,7 +58,57 @@ class DownloadPathService {
       return '';
     } catch (e, stackTrace) {
       AppLogger.error('Failed to get default download path', e, stackTrace);
+      if (Platform.isAndroid) {
+        try {
+          final support = await getApplicationSupportDirectory();
+          final fallback = Directory(
+            '${support.path}${Platform.pathSeparator}downloads'
+            '${Platform.pathSeparator}MBNDL',
+          );
+          await fallback.create(recursive: true);
+          return fallback.path;
+        } catch (_) {
+          // The caller will surface the failed storage verification.
+        }
+      }
       return '';
+    }
+  }
+
+  Future<AndroidDownloadStorageStatus> verifyAndroidDownloadStorage() async {
+    if (!Platform.isAndroid) {
+      final path = await getDefaultDownloadPath();
+      return AndroidDownloadStorageStatus(
+        ready: path.isNotEmpty,
+        workingPath: path,
+        publicPath: path,
+        message: path.isEmpty ? 'Download folder is unavailable' : 'Ready',
+      );
+    }
+    try {
+      final raw = await _androidChannel.invokeMethod<Map<dynamic, dynamic>>(
+        'verifyDownloadStorage',
+      );
+      final value = raw ?? const <dynamic, dynamic>{};
+      return AndroidDownloadStorageStatus(
+        ready: value['ready'] == true,
+        workingPath: value['workingPath']?.toString() ?? '',
+        publicPath: value['publicPath']?.toString() ?? 'Download/MBNDL',
+        message: value['message']?.toString() ?? 'Storage check failed',
+      );
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'Failed to verify Android download storage',
+        error,
+        stackTrace,
+      );
+      final fallback = await getDefaultDownloadPath();
+      return AndroidDownloadStorageStatus(
+        ready: false,
+        workingPath: fallback,
+        publicPath: 'Download/MBNDL',
+        message: 'Android could not verify the public download folder.',
+      );
     }
   }
 
@@ -77,6 +148,78 @@ class DownloadPathService {
         stackTrace,
       );
       return 0;
+    }
+  }
+
+  /// Finds files created by MBNDL's managed output template. History remains
+  /// useful metadata, but the filesystem is the source of truth for the green
+  /// "downloaded before" state in the format picker.
+  Future<Map<String, int>> findExistingFormatSelectors({
+    required String mediaId,
+    String? downloadPath,
+  }) async {
+    if (mediaId.trim().isEmpty) return const {};
+    try {
+      final publishedCounts = Platform.isAndroid
+          ? Map<String, int>.from(
+              await _androidChannel.invokeMethod<Map<dynamic, dynamic>>(
+                    'findExistingFormatSelectors',
+                    {'mediaId': mediaId.trim()},
+                  ) ??
+                  const <dynamic, dynamic>{},
+            )
+          : const <String, int>{};
+      final rootPath = downloadPath?.trim().isNotEmpty == true
+          ? downloadPath!.trim()
+          : await getDefaultDownloadPath();
+      if (rootPath.isEmpty) return publishedCounts;
+      final root = Directory(rootPath);
+      if (!await root.exists()) return publishedCounts;
+      final marker = RegExp(
+        '\\[${RegExp.escape(mediaId)}\\] \\[([^\\]]+)\\]',
+        caseSensitive: false,
+      );
+      final workingCounts = <String, int>{};
+      for (final category in const ['Video', 'Audio']) {
+        final directory = Directory(
+          '$rootPath${Platform.pathSeparator}$category',
+        );
+        if (!await directory.exists()) continue;
+        await for (final entity in directory.list(recursive: false)) {
+          if (entity is! File || entity.path.endsWith('.part')) continue;
+          final separator = entity.path.lastIndexOf(Platform.pathSeparator);
+          final fileName = separator < 0
+              ? entity.path
+              : entity.path.substring(separator + 1);
+          final match = marker.firstMatch(fileName);
+          final selector = match?.group(1);
+          if (selector == null || selector.isEmpty) continue;
+          workingCounts.update(
+            selector,
+            (value) => value + 1,
+            ifAbsent: () => 1,
+          );
+        }
+      }
+      // Android keeps a private resumable copy and a public MediaStore copy of
+      // the same artifact. Taking the greater count avoids counting those two
+      // representations as separate downloads.
+      final counts = <String, int>{...publishedCounts};
+      for (final entry in workingCounts.entries) {
+        counts.update(
+          entry.key,
+          (published) => published > entry.value ? published : entry.value,
+          ifAbsent: () => entry.value,
+        );
+      }
+      return counts;
+    } catch (error, stackTrace) {
+      AppLogger.warning(
+        'Could not inspect existing download formats',
+        error,
+        stackTrace,
+      );
+      return const {};
     }
   }
 

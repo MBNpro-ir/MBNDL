@@ -2,6 +2,40 @@
 
 All notable user-facing and developer-facing changes are documented in this file.
 
+## 🔐 1.0.3 — 2026-08-14
+
+### ✨ New
+
+- 👤 Added **Settings → YouTube Accounts** with encrypted storage for up to three YouTube/YouTube Music cookie profiles, account switching, refresh, disable, and secure sign-out.
+- 🧠 Added an automatic recovery prompt for YouTube bot-check and sign-in-required errors.
+- 🌐 Added the safe yt-dlp-supported sign-in flow: external official browser login, YouTube-only Netscape cookie validation, and just-in-time cookie materialization only for YouTube URLs.
+- ⚠️ Added prominent account restriction/ban and sensitive-cookie warnings based on yt-dlp’s official guidance.
+- 🎚️ Added Balanced, Fast Download, Unstable Connection, Gentle YouTube, and Limited Bandwidth transport presets.
+- ✅ Added filesystem and Android MediaStore detection for previously downloaded format IDs; matching qualities are highlighted green before selection.
+- 📋 Added explicit `(copy N)` duplicate names and confirmation instead of overwriting an existing quality.
+
+### 🛠️ Fixed
+
+- 📂 Replaced Android’s optimistic permission check with real private-folder and public `MediaStore.Downloads` write probes on Android 10+, plus legacy public-folder verification on Android 7–9.
+- 📱 Restored a non-empty app-owned working path while keeping completed files visible in `Downloads/MBNDL` on modern Android, including Android 16.
+- 🔎 Added public MediaStore queries so existing-quality detection does not depend only on app history or a private working copy.
+- 🔒 Removed plaintext cookie content from settings JSON, disabled Android backup for authentication material, and delete temporary cookie files after each yt-dlp operation.
+- 🧩 Made playlist handling automatic during inspection/download and removed manual playlist controls.
+- 🧹 Removed workflow-owned file, overwrite, thumbnail, post-processing, archive, live, and generic browser-cookie controls from yt-dlp Settings.
+- 💾 Fixed Quick Presets and custom presets so they no longer erase the selected download path or unrelated settings.
+- 💬 Improved YouTube authentication error mapping and preserved raw yt-dlp failures for intelligent recovery.
+
+### 🎨 Refined
+
+- 🪪 Changed the Settings hero from **Make MBN yours** to **Make MBNDL yours**.
+- 🧰 Reduced yt-dlp Settings to focused Presets, Connection, Captions, and Advanced tabs.
+- 📝 Made subtitle language, generated-caption, and output-format choices effective only when **Save subtitles** is selected in the format screen.
+
+### 🚀 Delivery
+
+- 🏷️ Set the application version to `1.0.3+3`.
+- 🤖 Revalidated Windows x64 and Android ARM release paths before starting the tagged release workflow.
+
 ## 🚀 1.0.1 — 2026-08-14
 
 ### 🛠️ Fixed

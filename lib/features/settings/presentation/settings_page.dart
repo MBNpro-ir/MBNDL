@@ -17,6 +17,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_theme_mode.dart';
 import '../../../shared/providers/settings_provider.dart';
+import '../../../shared/providers/cookie_provider.dart';
 import '../../../shared/models/delete_preference.dart';
 import '../../../services/logger/app_logger.dart';
 import '../../../services/storage/settings_storage_service.dart';
@@ -30,8 +31,10 @@ import '../widgets/ffmpeg_settings.dart';
 import '../widgets/app_update_settings.dart';
 import '../../../services/storage/settings_export_service.dart';
 import '../../../services/storage/download_path_service.dart';
+import '../../../services/storage/cookie_storage_service.dart';
 import '../../../services/permissions/permission_service.dart';
 import 'logs_viewer_page.dart';
+import 'cookie_manager_page.dart';
 
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
@@ -42,6 +45,7 @@ class SettingsPage extends ConsumerWidget {
     final themeColor = ref.watch(themeColorProvider);
     final logLevel = ref.watch(logLevelProvider);
     final deletePreference = ref.watch(deletePreferenceProvider);
+    final youtubeAccount = ref.watch(cookieProvider).selectedCookie;
 
     return Scaffold(
       appBar: AppBar(toolbarHeight: 76, title: const Text('Settings')),
@@ -77,7 +81,7 @@ class SettingsPage extends ConsumerWidget {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'Make MBN yours',
+                                  'Make MBNDL yours',
                                   style: Theme.of(context)
                                       .textTheme
                                       .headlineSmall
@@ -278,6 +282,28 @@ class SettingsPage extends ConsumerWidget {
                               ).colorScheme.onSurfaceVariant,
                             ),
                             onTap: () => context.push('/ytdlp-settings'),
+                          ),
+                          ListTile(
+                            leading: Icon(
+                              Icons.account_circle_outlined,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                            title: const Text('YouTube Accounts'),
+                            subtitle: Text(
+                              youtubeAccount == null
+                                  ? 'Anonymous mode · safest default'
+                                  : '${youtubeAccount.name} is active',
+                            ),
+                            trailing: Icon(
+                              Icons.chevron_right,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
+                            ),
+                            onTap: () => _navigateToSubPage(
+                              context,
+                              const CookieManagerPage(),
+                            ),
                           ),
                         ],
                       )
@@ -1159,6 +1185,14 @@ class SettingsPage extends ConsumerWidget {
         AppLogger.warning('Failed to close database', e);
       }
 
+      // Secure storage is outside the ordinary settings directory on both
+      // Android and Windows, so remove account secrets before deleting files.
+      try {
+        await CookieStorageService.instance.clearAll();
+      } catch (e) {
+        AppLogger.error('Failed to clear encrypted YouTube accounts', e);
+      }
+
       if (Platform.isWindows) {
         // ========== Windows Reset ==========
         final appData = Platform.environment['APPDATA'];
@@ -1233,7 +1267,7 @@ class SettingsPage extends ConsumerWidget {
           AppLogger.error('Failed to delete app documents', e);
         }
 
-        // 2. Delete Application Support Directory (cookies)
+        // 2. Delete cookie metadata (encrypted secrets were cleared above).
         try {
           final appSupportDir = await getApplicationSupportDirectory();
           final cookiesDir = Directory(

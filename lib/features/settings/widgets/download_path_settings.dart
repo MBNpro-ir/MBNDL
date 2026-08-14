@@ -19,6 +19,7 @@ class DownloadPathSettings extends ConsumerStatefulWidget {
 
 class _DownloadPathSettingsState extends ConsumerState<DownloadPathSettings> {
   String? _defaultPath;
+  AndroidDownloadStorageStatus? _androidStatus;
 
   @override
   void initState() {
@@ -28,7 +29,15 @@ class _DownloadPathSettingsState extends ConsumerState<DownloadPathSettings> {
 
   Future<void> _loadDefaultPath() async {
     final value = await DownloadPathService.instance.getDefaultDownloadPath();
-    if (mounted) setState(() => _defaultPath = value);
+    final status = Platform.isAndroid
+        ? await DownloadPathService.instance.verifyAndroidDownloadStorage()
+        : null;
+    if (mounted) {
+      setState(() {
+        _defaultPath = value.isEmpty ? status?.workingPath ?? '' : value;
+        _androidStatus = status;
+      });
+    }
   }
 
   Future<void> _selectDownloadPath() async {
@@ -86,7 +95,9 @@ class _DownloadPathSettingsState extends ConsumerState<DownloadPathSettings> {
   Widget build(BuildContext context) {
     final settings = ref.watch(ytDlpSettingsProvider);
     final actualPath = settings.downloadPath.isEmpty
-        ? _defaultPath ?? 'Loading…'
+        ? (_defaultPath?.isNotEmpty == true
+              ? _defaultPath!
+              : 'Working folder unavailable')
         : settings.downloadPath;
     final colorScheme = Theme.of(context).colorScheme;
 
@@ -127,6 +138,31 @@ class _DownloadPathSettingsState extends ConsumerState<DownloadPathSettings> {
                   ),
                   if (Platform.isAndroid) ...[
                     const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Icon(
+                          _androidStatus?.ready == true
+                              ? Icons.check_circle_rounded
+                              : Icons.error_outline_rounded,
+                          color: _androidStatus?.ready == true
+                              ? colorScheme.primary
+                              : colorScheme.error,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            _androidStatus?.message ??
+                                'Checking Android storage…',
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Check again',
+                          onPressed: _loadDefaultPath,
+                          icon: const Icon(Icons.refresh_rounded),
+                        ),
+                      ],
+                    ),
                     ExpansionTile(
                       tilePadding: EdgeInsets.zero,
                       title: const Text('Private working folder'),
@@ -177,7 +213,9 @@ class _DownloadPathSettingsState extends ConsumerState<DownloadPathSettings> {
                   leading: const Icon(Icons.folder_open_rounded),
                   title: const Text('Open downloads'),
                   subtitle: Text(
-                    Platform.isAndroid ? 'Show Android Downloads' : actualPath,
+                    Platform.isAndroid
+                        ? 'Downloads/MBNDL · verified by MediaStore'
+                        : actualPath,
                   ),
                   trailing: const Icon(Icons.open_in_new_rounded),
                   onTap: () => _openDownloadFolder(settings.downloadPath),

@@ -15,8 +15,14 @@ void main() {
         'Sign in to confirm you are not a bot. Use --cookies.',
       );
 
-      expect(error.title, 'Sign-in is required');
-      expect(error.suggestion, contains('cookies file'));
+      expect(error.title, 'YouTube sign-in is required');
+      expect(error.suggestion, contains('YouTube account'));
+      expect(
+        DownloadErrorMapper.isYouTubeAuthenticationError(
+          Exception('Sign in to confirm you are not a bot'),
+        ),
+        isTrue,
+      );
     });
 
     test('does not expose an opaque fallback error', () {

@@ -17,11 +17,25 @@ class FriendlyDownloadError {
 class DownloadErrorMapper {
   const DownloadErrorMapper._();
 
+  static String rawText(Object error) => error is PlatformException
+      ? '${error.code} ${error.message ?? ''} ${error.details ?? ''}'
+      : error.toString();
+
+  static bool isYouTubeAuthenticationError(Object error) {
+    final text = rawText(error).toLowerCase();
+    return _containsAny(text, const [
+      'sign in to confirm',
+      'confirm you’re not a bot',
+      "confirm you're not a bot",
+      'login required',
+      'cookies are needed',
+      'use --cookies',
+      'authentication required',
+    ]);
+  }
+
   static FriendlyDownloadError from(Object error) {
-    final raw = error is PlatformException
-        ? '${error.code} ${error.message ?? ''} ${error.details ?? ''}'
-        : error.toString();
-    return fromText(raw);
+    return fromText(rawText(error));
   }
 
   static FriendlyDownloadError fromText(String raw) {
@@ -59,9 +73,9 @@ class DownloadErrorMapper {
       'not a bot',
     ])) {
       return const FriendlyDownloadError(
-        title: 'Sign-in is required',
-        message: 'The website rejected anonymous access.',
-        suggestion: 'Add a fresh cookies file in Settings and retry.',
+        title: 'YouTube sign-in is required',
+        message: 'YouTube rejected anonymous access or requested a bot check.',
+        suggestion: 'Connect or refresh a YouTube account, then retry.',
       );
     }
     if (_containsAny(text, const [

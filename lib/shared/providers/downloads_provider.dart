@@ -9,6 +9,8 @@ import '../../services/downloader/download_service.dart';
 import '../../services/logger/app_logger.dart';
 import '../../features/settings/domain/yt_dlp_settings.dart';
 import '../models/download_item.dart';
+import '../utils/media_url_classifier.dart';
+import 'youtube_auth_provider.dart';
 
 enum DownloadSortBy {
   dateNewest,
@@ -167,6 +169,15 @@ class DownloadsNotifier extends AsyncNotifier<List<DownloadItem>> {
           await _restoreCancellationIfNeeded(task.item.id);
         } catch (error, stackTrace) {
           AppLogger.error('Queued download failed', error, stackTrace);
+          if (MediaUrlClassifier.isYouTubeUrl(task.item.url) &&
+              DownloadErrorMapper.isYouTubeAuthenticationError(error)) {
+            ref
+                .read(youtubeAuthIssueProvider.notifier)
+                .report(
+                  url: task.item.url,
+                  message: DownloadErrorMapper.from(error).displayText,
+                );
+          }
           if (await _restoreCancellationIfNeeded(task.item.id)) continue;
           final latest = _findById(task.item.id);
           if (latest != null &&

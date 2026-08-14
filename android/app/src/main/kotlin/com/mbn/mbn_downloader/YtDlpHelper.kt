@@ -103,21 +103,28 @@ object YtDlpHelper {
 
                 val request = YoutubeDLRequest(url)
                 request.addCommands(options)
-                request.addOption("--dump-json")
-                request.addOption("--no-playlist")
+                request.addOption("--dump-single-json")
+                addInspectionScope(request, url)
 
                 val response = YoutubeDL.getInstance().execute(request)
                 val output = response.out
 
-                // Parse JSON response
                 val jsonObject = JSONObject(output)
+                val representative = representativeEntry(jsonObject)
+                val isPlaylist = jsonObject.optString("_type") == "playlist"
                 val info = mapOf(
-                    "title" to jsonObject.optString("title", "Unknown"),
-                    "thumbnail" to jsonObject.optString("thumbnail"),
-                    "duration" to jsonObject.optInt("duration", 0),
-                    "uploader" to jsonObject.optString("uploader"),
-                    "filesize" to jsonObject.optLong("filesize", 0),
-                    "formats" to parseFormats(jsonObject)
+                    "title" to jsonObject.optString(
+                        "title",
+                        representative.optString("title", "Unknown")
+                    ),
+                    "id" to representative.optString("id"),
+                    "thumbnail" to representative.optString("thumbnail"),
+                    "duration" to representative.optInt("duration", 0),
+                    "uploader" to representative.optString("uploader"),
+                    "filesize" to representative.optLong("filesize", 0),
+                    "isPlaylist" to isPlaylist,
+                    "playlistCount" to jsonObject.optInt("playlist_count", 0),
+                    "formats" to parseFormats(representative)
                 )
 
                 mainHandler.post {
@@ -144,15 +151,15 @@ object YtDlpHelper {
 
                 val request = YoutubeDLRequest(url)
                 request.addCommands(options)
-                request.addOption("--dump-json")
-                request.addOption("--no-playlist")
+                request.addOption("--dump-single-json")
+                addInspectionScope(request, url)
 
                 val response = YoutubeDL.getInstance().execute(request)
                 val output = response.out
 
                 // Parse JSON response
                 val jsonObject = JSONObject(output)
-                val formats = parseFormats(jsonObject)
+                val formats = parseFormats(representativeEntry(jsonObject))
 
                 mainHandler.post {
                     result.success(formats)
@@ -164,6 +171,25 @@ object YtDlpHelper {
                 }
             }
         }
+    }
+
+    private fun addInspectionScope(request: YoutubeDLRequest, url: String) {
+        val uri = try { Uri.parse(url) } catch (_: Exception) { null }
+        val hasPlaylistPath = uri?.pathSegments?.any { it == "playlist" } == true
+        val hasPlaylistQuery = !uri?.getQueryParameter("list").isNullOrBlank()
+        if (hasPlaylistPath || hasPlaylistQuery) {
+            request.addOption("--playlist-end", "1")
+        } else {
+            request.addOption("--no-playlist")
+        }
+    }
+
+    private fun representativeEntry(root: JSONObject): JSONObject {
+        val entries = root.optJSONArray("entries") ?: return root
+        for (index in 0 until entries.length()) {
+            entries.optJSONObject(index)?.let { return it }
+        }
+        return root
     }
 
     private fun parseFormats(jsonObject: JSONObject): List<Map<String, Any?>> {
@@ -422,13 +448,35 @@ object YtDlpHelper {
                 )
                 val destinationDir = File(publicRoot, "MBNDL/$category")
                 destinationDir.mkdirs()
-                val destination = File(destinationDir, source.name)
-                source.copyTo(destination, overwrite = true)
+                val destination = uniqueDestination(destinationDir, source.name)
+                source.copyTo(destination, overwrite = false)
                 Uri.fromFile(destination).toString()
             }
         } catch (e: Exception) {
             Log.w(TAG, "Could not publish ${source.name} to Downloads", e)
             null
+        }
+    }
+
+    private fun uniqueDestination(directory: File, originalName: String): File {
+        val direct = File(directory, originalName)
+        if (!direct.exists()) return direct
+        val extension = originalName.substringAfterLast('.', "")
+        val stem = if (extension.isEmpty()) {
+            originalName
+        } else {
+            originalName.removeSuffix(".$extension")
+        }
+        var copy = 2
+        while (true) {
+            val candidateName = if (extension.isEmpty()) {
+                "$stem (copy $copy)"
+            } else {
+                "$stem (copy $copy).$extension"
+            }
+            val candidate = File(directory, candidateName)
+            if (!candidate.exists()) return candidate
+            copy++
         }
     }
 

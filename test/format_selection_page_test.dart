@@ -62,4 +62,41 @@ void main() {
     expect(find.text('2 outputs selected'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('downloaded formats are green and require copy confirmation', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1080, 1920);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    const format = VideoFormat(
+      formatId: '22',
+      resolution: '720p',
+      ext: 'mp4',
+      vcodec: 'h264',
+      acodec: 'aac',
+      hasVideo: true,
+      hasAudio: true,
+    );
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: FormatSelectionPage(
+          formats: [format],
+          videoTitle: 'Downloaded video',
+          previousDownloads: {'22': 1},
+        ),
+      ),
+    );
+
+    expect(find.text('Downloaded before'), findsOneWidget);
+    expect(find.text('No output selected'), findsOneWidget);
+    await tester.tap(find.textContaining('720p').first);
+    await tester.pumpAndSettle();
+    expect(find.text('This quality was downloaded before'), findsOneWidget);
+    await tester.tap(find.text('Download another copy'));
+    await tester.pumpAndSettle();
+    expect(find.text('1 output selected'), findsOneWidget);
+  });
 }

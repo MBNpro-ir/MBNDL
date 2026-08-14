@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import '../../shared/models/download_item.dart';
 import '../../shared/models/video_format.dart';
+import '../../shared/utils/media_url_classifier.dart';
 import '../../features/settings/domain/yt_dlp_settings.dart';
 import '../logger/app_logger.dart';
 import '../database/database_service.dart';
@@ -199,14 +200,22 @@ class DownloadService {
 
     try {
       final jsonData = await _extractDesktopData(url, settings);
+      final representative = _representativeEntry(jsonData);
+      final isPlaylist = jsonData['_type'] == 'playlist';
       AppLogger.info('Video info extracted: ${jsonData['title']}');
 
       return {
-        'title': jsonData['title'] ?? 'Unknown',
-        'thumbnail': jsonData['thumbnail'],
-        'duration': jsonData['duration'],
-        'uploader': jsonData['uploader'],
-        'filesize': jsonData['filesize'] ?? jsonData['filesize_approx'],
+        'title': jsonData['title'] ?? representative['title'] ?? 'Unknown',
+        'id': representative['id'],
+        'thumbnail': representative['thumbnail'],
+        'duration': representative['duration'],
+        'uploader': representative['uploader'],
+        'filesize':
+            representative['filesize'] ?? representative['filesize_approx'],
+        'isPlaylist': isPlaylist,
+        'playlistCount':
+            jsonData['playlist_count'] ??
+            (jsonData['entries'] as List<dynamic>?)?.length,
       };
     } catch (e, stackTrace) {
       AppLogger.error('Error extracting video info', e, stackTrace);
@@ -236,7 +245,8 @@ class DownloadService {
 
     try {
       final jsonData = await _extractDesktopData(url, settings);
-      final formatsJson = jsonData['formats'] as List<dynamic>?;
+      final formatsJson =
+          _representativeEntry(jsonData)['formats'] as List<dynamic>?;
 
       if (formatsJson == null || formatsJson.isEmpty) {
         AppLogger.warning('No formats found for URL: $url');
@@ -267,32 +277,53 @@ class DownloadService {
       args.addAll(await _detectJsRuntime());
     }
 
-    final selectedCookie = CookieStorageService.instance
-        .getSelectedCookieFilePath();
+    final selectedCookie = await CookieStorageService.instance
+        .materializeSelectedCookieForUrl(url);
     if (selectedCookie != null && selectedCookie.isNotEmpty) {
       args.addAll(['--cookies', selectedCookie]);
     }
 
-    final cacheKey = '$url\u0000${args.join('\u0000')}';
-    if (_cachedExtractionKey == cacheKey && _cachedExtraction != null) {
-      return _cachedExtraction!;
-    }
+    try {
+      final cacheKey = '$url\u0000${args.join('\u0000')}';
+      if (_cachedExtractionKey == cacheKey && _cachedExtraction != null) {
+        return _cachedExtraction!;
+      }
 
-    final result = await Process.run(_ytDlpPath!, [
-      ...args,
-      '--dump-single-json',
-      '--skip-download',
-      '--no-playlist',
-      url,
-    ]);
-    if (result.exitCode != 0) {
-      final error = result.stderr.toString().trim();
-      throw Exception(error.isEmpty ? 'yt-dlp extraction failed' : error);
-    }
+      final playlistInspection = MediaUrlClassifier.isLikelyPlaylistUrl(url);
+      final result = await Process.run(_ytDlpPath!, [
+        ...args,
+        '--dump-single-json',
+        '--skip-download',
+        if (playlistInspection) ...[
+          '--playlist-end',
+          '1',
+        ] else ...[
+          '--no-playlist',
+        ],
+        url,
+      ]);
+      if (result.exitCode != 0) {
+        final error = result.stderr.toString().trim();
+        throw Exception(error.isEmpty ? 'yt-dlp extraction failed' : error);
+      }
 
-    final data = jsonDecode(result.stdout.toString()) as Map<String, dynamic>;
-    _cachedExtractionKey = cacheKey;
-    _cachedExtraction = data;
+      final data = jsonDecode(result.stdout.toString()) as Map<String, dynamic>;
+      _cachedExtractionKey = cacheKey;
+      _cachedExtraction = data;
+      return data;
+    } finally {
+      await CookieStorageService.instance.releaseMaterializedCookie(
+        selectedCookie,
+      );
+    }
+  }
+
+  Map<String, dynamic> _representativeEntry(Map<String, dynamic> data) {
+    final entries = data['entries'] as List<dynamic>?;
+    if (entries == null || entries.isEmpty) return data;
+    for (final entry in entries) {
+      if (entry is Map) return Map<String, dynamic>.from(entry);
+    }
     return data;
   }
 
@@ -417,6 +448,9 @@ class DownloadService {
     // Build yt-dlp args with paths template for organized file storage
     final args = <String>[
       ...settings.toYtDlpArgs(),
+      if (Platform.isWindows) '--windows-filenames',
+      '--trim-filenames',
+      '180',
       '--newline',
       '--progress',
       '--progress-template',
@@ -438,150 +472,157 @@ class DownloadService {
       AppLogger.info('Using FFmpeg location: $ffmpegDir');
     }
 
-    // Add cookie file if one is selected
-    final cookieFilePath = CookieStorageService.instance
-        .getSelectedCookieFilePath();
-    if (cookieFilePath != null) {
-      args.addAll(['--cookies', cookieFilePath]);
-      AppLogger.info('Using cookie file: $cookieFilePath');
-    }
+    String? cookieFilePath;
+    try {
+      // Materialize the selected YouTube secret inside the guarded scope so
+      // every early setup failure still removes the temporary plaintext file.
+      cookieFilePath = await CookieStorageService.instance
+          .materializeSelectedCookieForUrl(item.url);
 
-    // For separate video+audio downloads, download each file individually
-    if (isSeparateDownload) {
-      // Split the format string
-      final formats = settings.selectedFormatId!.split('+');
-      if (formats.length == 2) {
-        final videoFormat = formats[0];
-        final audioFormat = formats[1];
+      // For separate video+audio downloads, download each file individually
+      if (isSeparateDownload) {
+        // Split the format string
+        final formats = settings.selectedFormatId!.split('+');
+        if (formats.length == 2) {
+          final videoFormat = formats[0];
+          final audioFormat = formats[1];
 
-        // Clear args and rebuild for separate downloads
-        args.clear();
+          // Clear args and rebuild for separate downloads
+          args.clear();
 
-        // Download video only (without audio) to Video folder
+          // Download video only (without audio) to Video folder
+          args.addAll([
+            ...settings.toYtDlpArgs(),
+            if (Platform.isWindows) '--windows-filenames',
+            '--trim-filenames',
+            '180',
+            '-f',
+            videoFormat,
+            '--newline',
+            '--progress',
+            '--progress-template',
+            'download:MBN_PROGRESS:%(progress._percent_str)s',
+            '--print',
+            'after_move:MBN_FILE:%(filepath)j',
+            '-P',
+            'temp:${tempDir.path}',
+            '-P',
+            'home:${videoDir.path}',
+            '-o',
+            settings.outputTemplate.replaceFirst('.%(ext)s', '_video.%(ext)s'),
+          ]);
+
+          // Add subtitle/thumbnail config if needed
+          if (settings.downloadSubtitlesEnabled) {
+            args.addAll([
+              '--write-subs',
+              if (settings.autoSubtitles) '--write-auto-subs',
+              '--sub-langs',
+              settings.subtitleLanguages,
+              '--sub-format',
+              'best',
+              '--convert-subs',
+              settings.subtitleFormat,
+              '-P',
+              'subtitle:${videoDir.path}',
+            ]);
+          }
+
+          if (settings.downloadThumbnailEnabled) {
+            args.addAll([
+              '--write-thumbnail',
+              '--convert-thumbnails',
+              'jpg',
+              '-P',
+              'thumbnail:${coverDir.path}',
+            ]);
+          }
+
+          args.add(item.url);
+
+          // Audio will be downloaded after video completes (handled in exitCode == 0 section)
+          AppLogger.info(
+            'Separate download mode: Video format $videoFormat, Audio format $audioFormat',
+          );
+        }
+      } else if (isAudioOnly) {
+        // Audio-only goes to Audio folder
         args.addAll([
-          ...settings.toYtDlpArgs(),
-          '-f',
-          videoFormat,
-          '--newline',
-          '--progress',
-          '--progress-template',
-          'download:MBN_PROGRESS:%(progress._percent_str)s',
-          '--print',
-          'after_move:MBN_FILE:%(filepath)j',
           '-P',
-          'temp:${tempDir.path}',
+          'home:${audioDir.path}',
+          '-o',
+          settings.outputTemplate,
+        ]);
+      } else {
+        // Regular video goes to Video folder
+        args.addAll([
           '-P',
           'home:${videoDir.path}',
           '-o',
-          '%(title)s_video.%(ext)s',
+          settings.outputTemplate,
         ]);
+      }
 
-        // Add subtitle/thumbnail config if needed
+      // Add subtitle/thumbnail config for non-separate downloads
+      if (!isSeparateDownload) {
         if (settings.downloadSubtitlesEnabled) {
           args.addAll([
             '--write-subs',
-            '--sub-langs',
-            settings.subtitleLanguages,
-            '--sub-format',
-            settings.subtitleFormat,
-            '-P',
-            'subtitle:${videoDir.path}',
+            if (settings.autoSubtitles) '--write-auto-subs',
+            '--sub-langs', settings.subtitleLanguages,
+            '--sub-format', 'best',
+            '--convert-subs', settings.subtitleFormat,
+            '-P', 'subtitle:${videoDir.path}', // Save subtitles with video
           ]);
         }
 
         if (settings.downloadThumbnailEnabled) {
           args.addAll([
             '--write-thumbnail',
-            '--convert-thumbnails',
-            'jpg',
-            '-P',
-            'thumbnail:${coverDir.path}',
+            '--convert-thumbnails', 'jpg',
+            '-P', 'thumbnail:${coverDir.path}', // Save covers in Cover folder
           ]);
         }
 
         args.add(item.url);
-
-        // Audio will be downloaded after video completes (handled in exitCode == 0 section)
-        AppLogger.info(
-          'Separate download mode: Video format $videoFormat, Audio format $audioFormat',
-        );
-      }
-    } else if (isAudioOnly) {
-      // Audio-only goes to Audio folder
-      args.addAll([
-        '-P',
-        'home:${audioDir.path}',
-        '-o',
-        '%(title)s [%(format_id)s].%(ext)s',
-      ]);
-    } else {
-      // Regular video goes to Video folder
-      args.addAll([
-        '-P',
-        'home:${videoDir.path}',
-        '-o',
-        '%(title)s [%(format_id)s].%(ext)s',
-      ]);
-    }
-
-    // Add subtitle/thumbnail config for non-separate downloads
-    if (!isSeparateDownload) {
-      if (settings.downloadSubtitlesEnabled) {
-        args.addAll([
-          '--write-subs',
-          '--sub-langs', settings.subtitleLanguages,
-          '--sub-format', settings.subtitleFormat,
-          '-P', 'subtitle:${videoDir.path}', // Save subtitles with video
-        ]);
       }
 
-      if (settings.downloadThumbnailEnabled) {
-        args.addAll([
-          '--write-thumbnail',
-          '--convert-thumbnails', 'jpg',
-          '-P', 'thumbnail:${coverDir.path}', // Save covers in Cover folder
-        ]);
+      // Settings rebuilt for separate streams above; add runtime, cookies and
+      // FFmpeg immediately before the URL so all modes share the same engine.
+      final sharedArgs = <String>[];
+      if (!args.contains('--js-runtimes') &&
+          !args.contains('--no-js-runtimes')) {
+        sharedArgs.addAll(await _detectJsRuntime());
+      }
+      if (ffmpegPath != null) {
+        sharedArgs.addAll(['--ffmpeg-location', File(ffmpegPath).parent.path]);
+      }
+      if (cookieFilePath != null) {
+        sharedArgs.addAll(['--cookies', cookieFilePath]);
+      }
+      final urlIndex = args.lastIndexOf(item.url);
+      if (urlIndex >= 0) {
+        args.insertAll(urlIndex, sharedArgs);
+      } else {
+        args.addAll([...sharedArgs, item.url]);
       }
 
-      args.add(item.url);
-    }
+      AppLogger.info('Starting download for: ${item.title}');
+      AppLogger.info('Base output directory: $baseOutputDir');
+      AppLogger.debug('yt-dlp args: ${args.join(' ')}');
 
-    // Settings rebuilt for separate streams above; add runtime, cookies and
-    // FFmpeg immediately before the URL so all modes share the same engine.
-    final sharedArgs = <String>[];
-    if (!args.contains('--js-runtimes') && !args.contains('--no-js-runtimes')) {
-      sharedArgs.addAll(await _detectJsRuntime());
-    }
-    if (ffmpegPath != null) {
-      sharedArgs.addAll(['--ffmpeg-location', File(ffmpegPath).parent.path]);
-    }
-    if (cookieFilePath != null) {
-      sharedArgs.addAll(['--cookies', cookieFilePath]);
-    }
-    final urlIndex = args.lastIndexOf(item.url);
-    if (urlIndex >= 0) {
-      args.insertAll(urlIndex, sharedArgs);
-    } else {
-      args.addAll([...sharedArgs, item.url]);
-    }
+      // Prepare environment with ffmpeg path
+      Map<String, String>? environment;
+      if (ffmpegPath != null) {
+        final ffmpegDir = File(ffmpegPath).parent.path;
+        final currentPath = Platform.environment['PATH'] ?? '';
+        environment = {
+          ...Platform.environment,
+          'PATH': '$ffmpegDir${Platform.isWindows ? ';' : ':'}$currentPath',
+        };
+        AppLogger.info('Added FFmpeg directory to PATH: $ffmpegDir');
+      }
 
-    AppLogger.info('Starting download for: ${item.title}');
-    AppLogger.info('Base output directory: $baseOutputDir');
-    AppLogger.debug('yt-dlp args: ${args.join(' ')}');
-
-    // Prepare environment with ffmpeg path
-    Map<String, String>? environment;
-    if (ffmpegPath != null) {
-      final ffmpegDir = File(ffmpegPath).parent.path;
-      final currentPath = Platform.environment['PATH'] ?? '';
-      environment = {
-        ...Platform.environment,
-        'PATH': '$ffmpegDir${Platform.isWindows ? ';' : ':'}$currentPath',
-      };
-      AppLogger.info('Added FFmpeg directory to PATH: $ffmpegDir');
-    }
-
-    try {
       final downloadStartedAt = DateTime.now();
       final process = await Process.start(
         _ytDlpPath!,
@@ -681,6 +722,9 @@ class DownloadService {
             // Build audio download args
             final audioArgs = <String>[
               ...settings.toExtractionArgs(),
+              if (Platform.isWindows) '--windows-filenames',
+              '--trim-filenames',
+              '180',
               '-f',
               audioFormat,
               '--newline',
@@ -694,7 +738,10 @@ class DownloadService {
               '-P',
               'home:${audioDir.path}',
               '-o',
-              '%(title)s_audio.%(ext)s',
+              settings.outputTemplate.replaceFirst(
+                '.%(ext)s',
+                '_audio.%(ext)s',
+              ),
               ...sharedArgs,
               item.url,
             ];
@@ -866,11 +913,10 @@ class DownloadService {
         AppLogger.info('Download completed successfully: ${item.title}');
       } else {
         // Download failed
-        final friendly = DownloadErrorMapper.fromText(
-          stderrLines.isEmpty
-              ? 'yt-dlp exited with code $exitCode'
-              : stderrLines.join('\n'),
-        );
+        final rawError = stderrLines.isEmpty
+            ? 'yt-dlp exited with code $exitCode'
+            : stderrLines.join('\n');
+        final friendly = DownloadErrorMapper.fromText(rawError);
         updatedItem = updatedItem.copyWith(
           status: DownloadStatus.failed,
           errorMessage: friendly.displayText,
@@ -879,6 +925,7 @@ class DownloadService {
         await DatabaseService.instance.updateDownload(updatedItem);
         onUpdate(updatedItem);
         AppLogger.error('Download failed: ${item.title}');
+        throw Exception(rawError);
       }
     } catch (e, stackTrace) {
       _activeDownloads.remove(item.id);
@@ -893,6 +940,10 @@ class DownloadService {
       onUpdate(updatedItem);
       AppLogger.error('Download error for ${item.title}', e, stackTrace);
       rethrow;
+    } finally {
+      await CookieStorageService.instance.releaseMaterializedCookie(
+        cookieFilePath,
+      );
     }
   }
 

@@ -3,13 +3,11 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../shared/providers/settings_provider.dart';
-import '../../../shared/providers/cookie_provider.dart';
 import '../../../shared/utils/validators.dart';
 import '../../../services/storage/presets_storage_service.dart';
 import '../../../services/downloader/android_ytdlp_service.dart';
 import '../domain/yt_dlp_settings.dart';
 import '../domain/custom_preset.dart';
-import 'cookie_manager_page.dart';
 
 class YtDlpSettingsPage extends ConsumerStatefulWidget {
   const YtDlpSettingsPage({super.key});
@@ -29,7 +27,7 @@ class _YtDlpSettingsPageState extends ConsumerState<YtDlpSettingsPage>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 7, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     PresetsStorageService.instance.initialize();
     if (Platform.isAndroid) _loadAndroidEngineVersion();
   }
@@ -54,7 +52,7 @@ class _YtDlpSettingsPageState extends ConsumerState<YtDlpSettingsPage>
       appBar: AppBar(
         title: const Text('yt-dlp Settings'),
         actions: [
-          if (_hasUnsavedChanges && !_isBuiltInPreset(settings.preset))
+          if (_hasUnsavedChanges)
             IconButton(
               icon: const Icon(Icons.add),
               tooltip: 'Save as Custom Preset',
@@ -66,11 +64,8 @@ class _YtDlpSettingsPageState extends ConsumerState<YtDlpSettingsPage>
           isScrollable: true,
           tabs: const [
             Tab(text: 'Presets'),
-            Tab(text: 'Download'),
-            Tab(text: 'Network'),
-            Tab(text: 'Files'),
-            Tab(text: 'Subtitles'),
-            Tab(text: 'Post-Processing'),
+            Tab(text: 'Connection'),
+            Tab(text: 'Captions'),
             Tab(text: 'Advanced'),
           ],
         ),
@@ -83,10 +78,7 @@ class _YtDlpSettingsPageState extends ConsumerState<YtDlpSettingsPage>
             children: [
               _buildPresetsTab(settings),
               _buildDownloadTab(settings),
-              _buildNetworkTab(settings),
-              _buildFilesTab(settings),
               _buildSubtitlesTab(settings),
-              _buildPostProcessingTab(settings),
               _buildAdvancedTab(settings),
             ],
           ),
@@ -111,32 +103,51 @@ class _YtDlpSettingsPageState extends ConsumerState<YtDlpSettingsPage>
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Choose a preset configuration optimized for different scenarios',
+                  'Tune only network and retry behavior. Format, playlist, '
+                  'file naming, covers, and merging stay automatic.',
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
                 const SizedBox(height: 16),
                 _PresetButton(
-                  title: 'Default',
-                  description: 'Standard settings with metadata',
-                  icon: Icons.settings,
+                  title: 'Balanced',
+                  description: '4 fragments · 10 retries · recommended default',
+                  icon: Icons.balance_rounded,
                   isSelected: settings.preset == 'default',
                   onTap: () => _applyPreset('default'),
                 ),
                 const SizedBox(height: 12),
                 _PresetButton(
                   title: 'Fast Download',
-                  description: 'Accelerated download using aria2c',
+                  description: '8 concurrent fragments for a strong connection',
                   icon: Icons.speed,
                   isSelected: settings.preset == 'speed',
                   onTap: () => _applyPreset('speed'),
                 ),
                 const SizedBox(height: 12),
                 _PresetButton(
-                  title: 'SLOW CONNECTION',
-                  description: 'Optimized for slow/restricted connections',
-                  icon: Icons.security,
-                  isSelected: settings.preset == 'ip_limited',
-                  onTap: () => _applyPreset('ip_limited'),
+                  title: 'Unstable Connection',
+                  description:
+                      'Single stream · longer timeout · exponential retry',
+                  icon: Icons.network_check_rounded,
+                  isSelected: settings.preset == 'resilient',
+                  onTap: () => _applyPreset('resilient'),
+                ),
+                const SizedBox(height: 12),
+                _PresetButton(
+                  title: 'Gentle YouTube',
+                  description:
+                      '5–10 second pauses and fewer simultaneous requests',
+                  icon: Icons.health_and_safety_outlined,
+                  isSelected: settings.preset == 'gentle_youtube',
+                  onTap: () => _applyPreset('gentle_youtube'),
+                ),
+                const SizedBox(height: 12),
+                _PresetButton(
+                  title: 'Limited Bandwidth',
+                  description: 'Single stream capped at 2 MiB/s',
+                  icon: Icons.data_saver_on_rounded,
+                  isSelected: settings.preset == 'limited_bandwidth',
+                  onTap: () => _applyPreset('limited_bandwidth'),
                 ),
               ],
             ),
@@ -175,7 +186,10 @@ class _YtDlpSettingsPageState extends ConsumerState<YtDlpSettingsPage>
                           onTap: () {
                             ref
                                 .read(ytDlpSettingsProvider.notifier)
-                                .updateSettings(preset.settings);
+                                .applyTransportPreset(
+                                  name: preset.id,
+                                  preset: preset.settings,
+                                );
                             setState(() {
                               _hasUnsavedChanges = false;
                               _originalSettings = null;
@@ -190,21 +204,19 @@ class _YtDlpSettingsPageState extends ConsumerState<YtDlpSettingsPage>
             );
           },
         ),
-        const SizedBox(height: 16),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
+        Card.filled(
+          child: const Padding(
+            padding: EdgeInsets.all(16),
+            child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Current Preset',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 8),
-                Chip(
-                  label: Text(settings.preset.toUpperCase()),
-                  avatar: Icon(_getPresetIcon(settings.preset), size: 18),
+                Icon(Icons.info_outline_rounded),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Gentle YouTube reduces request frequency but cannot '
+                    'prevent rate limits or account restrictions.',
+                  ),
                 ),
               ],
             ),
@@ -214,29 +226,12 @@ class _YtDlpSettingsPageState extends ConsumerState<YtDlpSettingsPage>
     );
   }
 
-  bool _isBuiltInPreset(String preset) {
-    return ['default', 'speed', 'ip_limited'].contains(preset);
-  }
-
   void _applyPreset(String presetName) {
     ref.read(ytDlpSettingsProvider.notifier).loadPreset(presetName);
     setState(() {
       _hasUnsavedChanges = false;
       _originalSettings = null;
     });
-  }
-
-  IconData _getPresetIcon(String preset) {
-    switch (preset) {
-      case 'speed':
-        return Icons.speed;
-      case 'ip_limited':
-        return Icons.security;
-      case 'default':
-        return Icons.settings;
-      default:
-        return Icons.star;
-    }
   }
 
   Widget _buildDownloadTab(YtDlpSettings settings) {
@@ -261,12 +256,13 @@ class _YtDlpSettingsPageState extends ConsumerState<YtDlpSettingsPage>
             (value) =>
                 _updateSettings(settings.copyWith(retries: value.toInt())),
           ),
-          _buildSwitchTile(
-            'Use aria2c',
-            'Accelerate downloads with aria2c',
-            settings.useAria2c,
-            (value) => _updateSettings(settings.copyWith(useAria2c: value)),
-          ),
+          if (Platform.isAndroid)
+            _buildSwitchTile(
+              'Use Android aria2c engine',
+              'Optional external downloader bundled in the Android app',
+              settings.useAria2c,
+              (value) => _updateSettings(settings.copyWith(useAria2c: value)),
+            ),
         ]),
         _buildSectionCard('Limits', [
           _buildTextFieldTile(
@@ -282,65 +278,6 @@ class _YtDlpSettingsPageState extends ConsumerState<YtDlpSettingsPage>
             settings.bufferSize,
             (value) => _updateSettings(settings.copyWith(bufferSize: value)),
             validator: Validators.validateBufferSize,
-          ),
-        ]),
-        _buildSectionCard('Playlist', [
-          _buildSwitchTile(
-            'Download Playlist',
-            'Download entire playlist if URL is a playlist',
-            settings.downloadPlaylist,
-            (value) =>
-                _updateSettings(settings.copyWith(downloadPlaylist: value)),
-          ),
-          _buildTextFieldTile(
-            'Playlist Items',
-            'e.g., 1-10, 1,3,5',
-            settings.playlistItems,
-            (value) => _updateSettings(settings.copyWith(playlistItems: value)),
-            validator: Validators.validatePlaylistItems,
-          ),
-          _buildSwitchTile(
-            'Random Order',
-            'Download playlist items in random order',
-            settings.playlistRandom,
-            (value) =>
-                _updateSettings(settings.copyWith(playlistRandom: value)),
-          ),
-        ]),
-      ],
-    );
-  }
-
-  Widget _buildNetworkTab(YtDlpSettings settings) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _buildSectionCard('Authentication', [
-          Consumer(
-            builder: (context, ref, child) {
-              final cookieState = ref.watch(cookieProvider);
-              final selectedCookie = cookieState.selectedCookie;
-
-              return ListTile(
-                title: const Text('Cookies'),
-                subtitle: Text(
-                  selectedCookie != null
-                      ? 'Selected: ${selectedCookie.name}'
-                      : 'No cookie selected',
-                ),
-                trailing: FilledButton.icon(
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (context) => const CookieManagerPage(),
-                      ),
-                    );
-                  },
-                  icon: const Icon(Icons.cookie),
-                  label: const Text('Manage Cookies'),
-                ),
-              );
-            },
           ),
         ]),
         _buildSectionCard('Proxy', [
@@ -364,7 +301,7 @@ class _YtDlpSettingsPageState extends ConsumerState<YtDlpSettingsPage>
           ),
           _buildSwitchTile(
             'Force IPv4',
-            'Make all connections via IPv4',
+            'Use IPv4 for all requests',
             settings.forceIpv4,
             (value) => _updateSettings(
               settings.copyWith(forceIpv4: value, forceIpv6: false),
@@ -372,108 +309,11 @@ class _YtDlpSettingsPageState extends ConsumerState<YtDlpSettingsPage>
           ),
           _buildSwitchTile(
             'Force IPv6',
-            'Make all connections via IPv6',
+            'Use IPv6 for all requests',
             settings.forceIpv6,
             (value) => _updateSettings(
               settings.copyWith(forceIpv6: value, forceIpv4: false),
             ),
-          ),
-        ]),
-        Card(
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          child: const Padding(
-            padding: EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.info_outline, size: 20),
-                    SizedBox(width: 8),
-                    Text(
-                      'Cookies File',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ],
-                ),
-                SizedBox(height: 8),
-                Text(
-                  'Use cookies for platforms that require authentication.\n'
-                  'Export cookies from your browser in Netscape format.\n\n'
-                  'Extensions like "Get cookies.txt LOCALLY" can help export cookies.',
-                  style: TextStyle(fontSize: 13),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildFilesTab(YtDlpSettings settings) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _buildSectionCard('Output Template', [
-          _buildTextFieldTile(
-            'Template',
-            '%(title)s.%(ext)s',
-            settings.outputTemplate,
-            (value) =>
-                _updateSettings(settings.copyWith(outputTemplate: value)),
-          ),
-        ]),
-        _buildSectionCard('File Options', [
-          _buildSwitchTile(
-            'Overwrite Files',
-            'Overwrite existing files',
-            settings.overwriteFiles,
-            (value) =>
-                _updateSettings(settings.copyWith(overwriteFiles: value)),
-          ),
-          _buildSwitchTile(
-            'Continue Download',
-            'Resume partially downloaded files',
-            settings.continueDownload,
-            (value) =>
-                _updateSettings(settings.copyWith(continueDownload: value)),
-          ),
-          _buildSwitchTile(
-            'Restrict Filenames',
-            'Restrict filenames to ASCII characters',
-            settings.restrictFilenames,
-            (value) =>
-                _updateSettings(settings.copyWith(restrictFilenames: value)),
-          ),
-          _buildSwitchTile(
-            'Windows Compatible',
-            'Force Windows-compatible filenames',
-            settings.windowsFilenames,
-            (value) =>
-                _updateSettings(settings.copyWith(windowsFilenames: value)),
-          ),
-        ]),
-        _buildSectionCard('Metadata Files', [
-          _buildSwitchTile(
-            'Write Thumbnail',
-            'Save thumbnail image',
-            settings.writeThumbnail,
-            (value) =>
-                _updateSettings(settings.copyWith(writeThumbnail: value)),
-          ),
-          _buildSwitchTile(
-            'Write Description',
-            'Save video description',
-            settings.writeDescription,
-            (value) =>
-                _updateSettings(settings.copyWith(writeDescription: value)),
-          ),
-          _buildSwitchTile(
-            'Write Info JSON',
-            'Save video metadata as JSON',
-            settings.writeInfoJson,
-            (value) => _updateSettings(settings.copyWith(writeInfoJson: value)),
           ),
         ]),
       ],
@@ -484,14 +324,7 @@ class _YtDlpSettingsPageState extends ConsumerState<YtDlpSettingsPage>
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        _buildSectionCard('Subtitle Downloads', [
-          _buildSwitchTile(
-            'Download Subtitles',
-            'Download available subtitles',
-            settings.downloadSubtitles,
-            (value) =>
-                _updateSettings(settings.copyWith(downloadSubtitles: value)),
-          ),
+        _buildSectionCard('Caption preferences', [
           _buildSwitchTile(
             'Auto-Generated Subtitles',
             'Include auto-generated subtitles',
@@ -513,138 +346,6 @@ class _YtDlpSettingsPageState extends ConsumerState<YtDlpSettingsPage>
             (value) =>
                 _updateSettings(settings.copyWith(subtitleFormat: value!)),
           ),
-        ]),
-        _buildSectionCard('Subtitle Processing', [
-          _buildSwitchTile(
-            'Embed Subtitles',
-            'Embed subtitles in video file',
-            settings.embedSubtitles,
-            (value) =>
-                _updateSettings(settings.copyWith(embedSubtitles: value)),
-          ),
-          _buildDropdownTile(
-            'Convert Format',
-            settings.convertSubtitles.isEmpty
-                ? 'none'
-                : settings.convertSubtitles,
-            ['none', 'srt', 'vtt', 'ass', 'lrc'],
-            (value) => _updateSettings(
-              settings.copyWith(
-                convertSubtitles: value == 'none' ? '' : value!,
-              ),
-            ),
-          ),
-        ]),
-      ],
-    );
-  }
-
-  Widget _buildPostProcessingTab(YtDlpSettings settings) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _buildSectionCard('Metadata Embedding', [
-          _buildSwitchTile(
-            'Embed Thumbnail',
-            'Embed thumbnail in video file',
-            settings.embedThumbnail,
-            (value) =>
-                _updateSettings(settings.copyWith(embedThumbnail: value)),
-          ),
-          _buildSwitchTile(
-            'Embed Metadata',
-            'Add metadata to video file',
-            settings.embedMetadata,
-            (value) => _updateSettings(settings.copyWith(embedMetadata: value)),
-          ),
-          _buildSwitchTile(
-            'Embed Chapters',
-            'Add chapter markers',
-            settings.embedChapters,
-            (value) => _updateSettings(settings.copyWith(embedChapters: value)),
-          ),
-        ]),
-        _buildSectionCard('Audio Extraction', [
-          _buildSwitchTile(
-            'Extract Audio',
-            'Convert to audio-only file',
-            settings.extractAudio,
-            (value) => _updateSettings(settings.copyWith(extractAudio: value)),
-          ),
-          if (settings.extractAudio) ...[
-            _buildDropdownTile(
-              'Audio Format',
-              settings.audioFormat.isEmpty ? 'mp3' : settings.audioFormat,
-              ['mp3', 'aac', 'flac', 'm4a', 'opus', 'vorbis', 'wav'],
-              (value) =>
-                  _updateSettings(settings.copyWith(audioFormat: value!)),
-            ),
-            _buildSliderTile(
-              'Audio Quality (0=best, 10=worst)',
-              double.parse(settings.audioQuality),
-              0,
-              10,
-              (value) => _updateSettings(
-                settings.copyWith(audioQuality: value.toInt().toString()),
-              ),
-            ),
-            _buildSwitchTile(
-              'Keep Video',
-              'Keep original video file after extraction',
-              settings.keepVideo,
-              (value) => _updateSettings(settings.copyWith(keepVideo: value)),
-            ),
-          ],
-        ]),
-        _buildSectionCard('Video Conversion', [
-          _buildDropdownTile(
-            'Remux Video',
-            settings.remuxVideo.isEmpty ? 'none' : settings.remuxVideo,
-            ['none', 'mp4', 'mkv', 'webm', 'avi', 'flv'],
-            (value) => _updateSettings(
-              settings.copyWith(remuxVideo: value == 'none' ? '' : value!),
-            ),
-          ),
-          _buildSwitchTile(
-            'Split by Chapters',
-            'Split video into multiple files by chapters',
-            settings.splitChapters,
-            (value) => _updateSettings(settings.copyWith(splitChapters: value)),
-          ),
-        ]),
-        _buildSectionCard('SponsorBlock', [
-          _buildSwitchTile(
-            'Mark Sponsor Segments',
-            'Create chapters for sponsor segments',
-            settings.sponsorblockMark,
-            (value) =>
-                _updateSettings(settings.copyWith(sponsorblockMark: value)),
-          ),
-          if (settings.sponsorblockMark)
-            _buildTextFieldTile(
-              'Mark Categories',
-              'e.g., sponsor,intro,outro',
-              settings.sponsorblockMarkCategories,
-              (value) => _updateSettings(
-                settings.copyWith(sponsorblockMarkCategories: value),
-              ),
-            ),
-          _buildSwitchTile(
-            'Remove Sponsor Segments',
-            'Cut out sponsor segments from video',
-            settings.sponsorblockRemove,
-            (value) =>
-                _updateSettings(settings.copyWith(sponsorblockRemove: value)),
-          ),
-          if (settings.sponsorblockRemove)
-            _buildTextFieldTile(
-              'Remove Categories',
-              'e.g., sponsor,selfpromo',
-              settings.sponsorblockRemoveCategories,
-              (value) => _updateSettings(
-                settings.copyWith(sponsorblockRemoveCategories: value),
-              ),
-            ),
         ]),
       ],
     );
@@ -731,18 +432,6 @@ class _YtDlpSettingsPageState extends ConsumerState<YtDlpSettingsPage>
             settings.verbose,
             (value) => _updateSettings(settings.copyWith(verbose: value)),
           ),
-          _buildSwitchTile(
-            'Quiet Mode',
-            'Suppress output messages',
-            settings.quiet,
-            (value) => _updateSettings(settings.copyWith(quiet: value)),
-          ),
-          _buildSwitchTile(
-            'Ignore Errors',
-            'Continue on download errors',
-            settings.ignoreErrors,
-            (value) => _updateSettings(settings.copyWith(ignoreErrors: value)),
-          ),
         ]),
         _buildSectionCard('Rate Limiting', [
           _buildTextFieldTile(
@@ -796,41 +485,6 @@ class _YtDlpSettingsPageState extends ConsumerState<YtDlpSettingsPage>
             settings.impersonateTarget,
             (value) =>
                 _updateSettings(settings.copyWith(impersonateTarget: value)),
-          ),
-          if (!Platform.isAndroid)
-            _buildTextFieldTile(
-              'Cookies From Browser',
-              'e.g., firefox or chrome:Default',
-              settings.cookiesFromBrowser,
-              (value) =>
-                  _updateSettings(settings.copyWith(cookiesFromBrowser: value)),
-            ),
-        ]),
-        _buildSectionCard('Archive & Live', [
-          _buildTextFieldTile(
-            'Download Archive',
-            'Path to the archive file of previously downloaded IDs',
-            settings.downloadArchive,
-            (value) =>
-                _updateSettings(settings.copyWith(downloadArchive: value)),
-          ),
-          _buildSwitchTile(
-            'Break per input URL',
-            'Reset break-on-existing and max-download counters per URL',
-            settings.breakPerInput,
-            (value) => _updateSettings(settings.copyWith(breakPerInput: value)),
-          ),
-          _buildSwitchTile(
-            'Live from start',
-            'Download livestreams from their beginning when supported',
-            settings.liveFromStart,
-            (value) => _updateSettings(settings.copyWith(liveFromStart: value)),
-          ),
-          _buildTextFieldTile(
-            'Wait for scheduled video',
-            'Polling interval in seconds, e.g., 60 or 60-300',
-            settings.waitForVideo,
-            (value) => _updateSettings(settings.copyWith(waitForVideo: value)),
           ),
         ]),
         _buildSectionCard('Advanced Options', [

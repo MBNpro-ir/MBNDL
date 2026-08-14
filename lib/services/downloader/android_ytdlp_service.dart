@@ -91,24 +91,28 @@ class AndroidYtDlpService {
     AppLogger.info('Extracting video info for: $url');
 
     try {
-      final options = await _extractionOptions(settings);
-      final result = await _channel.invokeMethod('getInfo', {
-        'url': url,
-        'options': options,
-      });
-      final info = Map<String, dynamic>.from(result as Map);
-      final rawFormats = info.remove('formats') as List<dynamic>?;
-      if (rawFormats != null) {
-        _cachedExtractionKey = _extractionKey(url, options);
-        _cachedFormats = rawFormats
-            .map(
-              (format) => VideoFormat.fromJson(
-                Map<String, dynamic>.from(format as Map),
-              ),
-            )
-            .toList(growable: false);
+      final options = await _extractionOptions(url, settings);
+      try {
+        final result = await _channel.invokeMethod('getInfo', {
+          'url': url,
+          'options': options,
+        });
+        final info = Map<String, dynamic>.from(result as Map);
+        final rawFormats = info.remove('formats') as List<dynamic>?;
+        if (rawFormats != null) {
+          _cachedExtractionKey = _extractionKey(url, options);
+          _cachedFormats = rawFormats
+              .map(
+                (format) => VideoFormat.fromJson(
+                  Map<String, dynamic>.from(format as Map),
+                ),
+              )
+              .toList(growable: false);
+        }
+        return info;
+      } finally {
+        await _releaseCookieFromOptions(options);
       }
-      return info;
     } catch (e, stackTrace) {
       AppLogger.error('Error extracting video info', e, stackTrace);
       rethrow;
@@ -123,23 +127,29 @@ class AndroidYtDlpService {
     AppLogger.info('Fetching available formats for: $url');
 
     try {
-      final options = await _extractionOptions(settings);
-      final cacheKey = _extractionKey(url, options);
-      if (_cachedExtractionKey == cacheKey && _cachedFormats != null) {
-        return List<VideoFormat>.of(_cachedFormats!);
+      final options = await _extractionOptions(url, settings);
+      try {
+        final cacheKey = _extractionKey(url, options);
+        if (_cachedExtractionKey == cacheKey && _cachedFormats != null) {
+          return List<VideoFormat>.of(_cachedFormats!);
+        }
+        final result = await _channel.invokeMethod('getFormats', {
+          'url': url,
+          'options': options,
+        });
+        final formatsList = result as List;
+
+        final formats = formatsList
+            .map(
+              (f) => VideoFormat.fromJson(Map<String, dynamic>.from(f as Map)),
+            )
+            .toList();
+
+        AppLogger.info('Found ${formats.length} formats');
+        return formats;
+      } finally {
+        await _releaseCookieFromOptions(options);
       }
-      final result = await _channel.invokeMethod('getFormats', {
-        'url': url,
-        'options': options,
-      });
-      final formatsList = result as List;
-
-      final formats = formatsList
-          .map((f) => VideoFormat.fromJson(Map<String, dynamic>.from(f as Map)))
-          .toList();
-
-      AppLogger.info('Found ${formats.length} formats');
-      return formats;
     } catch (e, stackTrace) {
       AppLogger.error('Error fetching formats', e, stackTrace);
       rethrow;
@@ -149,14 +159,25 @@ class AndroidYtDlpService {
   String _extractionKey(String url, List<String> options) =>
       '$url\u0000${options.join('\u0000')}';
 
-  Future<List<String>> _extractionOptions(YtDlpSettings? settings) async {
+  Future<List<String>> _extractionOptions(
+    String url,
+    YtDlpSettings? settings,
+  ) async {
     final options = <String>[...?settings?.toExtractionArgs()];
-    final cookiePath = CookieStorageService.instance
-        .getSelectedCookieFilePath();
+    final cookiePath = await CookieStorageService.instance
+        .materializeSelectedCookieForUrl(url);
     if (cookiePath != null && cookiePath.isNotEmpty) {
       options.addAll(['--cookies', cookiePath]);
     }
     return options;
+  }
+
+  Future<void> _releaseCookieFromOptions(List<String> options) async {
+    final index = options.lastIndexOf('--cookies');
+    if (index < 0 || index + 1 >= options.length) return;
+    await CookieStorageService.instance.releaseMaterializedCookie(
+      options[index + 1],
+    );
   }
 
   /// Start download
@@ -207,6 +228,7 @@ class AndroidYtDlpService {
     // Preserve option order and repeated flags; several current yt-dlp options
     // (for example --js-runtimes and -P) may legitimately occur more than once.
     final options = <String>[...settings.toYtDlpArgs()];
+    options.addAll(['--trim-filenames', '180']);
 
     // Add path configuration for organized storage
     // Note: We can't use multiple -P in options map, so we build output path directly
@@ -218,18 +240,18 @@ class AndroidYtDlpService {
     }
 
     // Use -o with full path instead of -P (more compatible with Android yt-dlp)
-    options.addAll([
-      '-o',
-      '$finalOutputPath/%(title)s [%(format_id)s].%(ext)s',
-    ]);
+    options.addAll(['-o', '$finalOutputPath/${settings.outputTemplate}']);
 
     // Subtitle folder
     if (settings.downloadSubtitlesEnabled) {
       options.addAll([
         '--write-subs',
+        if (settings.autoSubtitles) '--write-auto-subs',
         '--sub-langs',
         settings.subtitleLanguages,
         '--sub-format',
+        'best',
+        '--convert-subs',
         settings.subtitleFormat,
       ]);
       // Note: yt-dlp on Android may not support separate subtitle paths
@@ -242,20 +264,22 @@ class AndroidYtDlpService {
       // Thumbnails will be saved to cover directory if supported
     }
 
-    // Add cookie file if one is selected
-    final cookieFilePath = CookieStorageService.instance
-        .getSelectedCookieFilePath();
-    if (cookieFilePath != null) {
-      options.addAll(['--cookies', cookieFilePath]);
-      AppLogger.info('Using cookie file: $cookieFilePath');
-    }
-
-    AppLogger.info('Starting download for: ${item.title}');
-    AppLogger.info('Output path: $outputDir');
-    AppLogger.debug('Options: $options');
-
     StreamSubscription<dynamic>? progressSubscription;
+    String? cookieFilePath;
     try {
+      // Keep plaintext cookie materialization inside the guarded scope so it
+      // is removed even if native download setup fails before execution.
+      cookieFilePath = await CookieStorageService.instance
+          .materializeSelectedCookieForUrl(item.url);
+      if (cookieFilePath != null) {
+        options.addAll(['--cookies', cookieFilePath]);
+        AppLogger.info('Using cookie file: $cookieFilePath');
+      }
+
+      AppLogger.info('Starting download for: ${item.title}');
+      AppLogger.info('Output path: $outputDir');
+      AppLogger.debug('Options: $options');
+
       // Update status to downloading
       var updatedItem = item.copyWith(
         status: DownloadStatus.downloading,
@@ -379,6 +403,9 @@ class AndroidYtDlpService {
       rethrow;
     } finally {
       await progressSubscription?.cancel();
+      await CookieStorageService.instance.releaseMaterializedCookie(
+        cookieFilePath,
+      );
     }
   }
 

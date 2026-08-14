@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../logger/app_logger.dart';
+import '../storage/download_path_service.dart';
 
 class RequiredPermissionState {
   const RequiredPermissionState({
@@ -13,6 +14,8 @@ class RequiredPermissionState {
     required this.storageGranted,
     required this.notificationRequired,
     required this.notificationGranted,
+    this.workingPath = '',
+    this.storageMessage = '',
   });
 
   final int sdkInt;
@@ -21,6 +24,8 @@ class RequiredPermissionState {
   final bool storageGranted;
   final bool notificationRequired;
   final bool notificationGranted;
+  final String workingPath;
+  final String storageMessage;
 
   bool get allGranted =>
       downloadFolderReady &&
@@ -72,14 +77,18 @@ class PermissionService {
     final sdk = await getAndroidSdkInt();
     final storageRequired = sdk < 29;
     final notificationRequired = sdk >= 33;
+    final storage = await DownloadPathService.instance
+        .verifyAndroidDownloadStorage();
     return RequiredPermissionState(
       sdkInt: sdk,
-      downloadFolderReady: true,
+      downloadFolderReady: storage.ready,
       storageRequired: storageRequired,
       storageGranted: !storageRequired || await _hasNativePermission('storage'),
       notificationRequired: notificationRequired,
       notificationGranted:
           !notificationRequired || await _hasNativePermission('notification'),
+      workingPath: storage.workingPath,
+      storageMessage: storage.message,
     );
   }
 
@@ -96,7 +105,7 @@ class PermissionService {
     if (sdk >= 33 && !await _hasNativePermission('notification')) {
       if (!await _requestNativePermission('notification')) return false;
     }
-    return hasRequiredPermissions();
+    return (await getRequiredPermissionState()).allGranted;
   }
 
   Future<bool> requestStoragePermission(BuildContext context) async {

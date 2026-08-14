@@ -11,6 +11,7 @@ import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/app_theme_mode.dart';
 import 'features/permissions/permission_request_page.dart';
+import 'features/settings/presentation/cookie_manager_page.dart';
 import 'services/database/database_service.dart';
 import 'services/downloader/download_service.dart';
 import 'services/logger/app_logger.dart';
@@ -20,6 +21,8 @@ import 'services/storage/settings_storage_service.dart';
 import 'services/storage/storage_service.dart';
 import 'shared/providers/settings_provider.dart';
 import 'shared/providers/app_update_provider.dart';
+import 'shared/providers/cookie_provider.dart';
+import 'shared/providers/youtube_auth_provider.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -90,6 +93,7 @@ class _MBNDownloaderAppState extends ConsumerState<MBNDownloaderApp>
   bool _isQuitting = false;
   bool _appUpdaterStarted = false;
   String? _promptedUpdateVersion;
+  bool _youtubeAuthPromptVisible = false;
 
   @override
   void initState() {
@@ -338,6 +342,98 @@ class _MBNDownloaderAppState extends ConsumerState<MBNDownloaderApp>
     }
   }
 
+  Future<void> _showYouTubeAuthIssue(YouTubeAuthIssue issue) async {
+    if (_youtubeAuthPromptVisible) return;
+    final dialogContext = rootNavigatorKey.currentContext;
+    if (dialogContext == null) return;
+    _youtubeAuthPromptVisible = true;
+    ref.read(youtubeAuthIssueProvider.notifier).clear();
+
+    try {
+      final action = await showDialog<_YouTubeAuthAction>(
+        context: dialogContext,
+        builder: (context) => AlertDialog(
+          icon: const Icon(Icons.account_circle_outlined),
+          title: const Text('YouTube needs an account'),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(issue.message),
+                const SizedBox(height: 16),
+                Card.filled(
+                  child: const Padding(
+                    padding: EdgeInsets.all(14),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.warning_amber_rounded),
+                        SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Using account cookies with automated downloads can '
+                            'cause temporary or permanent YouTube restrictions. '
+                            'Use them only when necessary.',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'MBNDL opens the official sign-in page in your browser and '
+                  'accepts only an exported Netscape cookies.txt file. It never '
+                  'asks for your Google password.',
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, _YouTubeAuthAction.later),
+              child: const Text('Not now'),
+            ),
+            FilledButton.icon(
+              onPressed: () =>
+                  Navigator.pop(context, _YouTubeAuthAction.manageAccounts),
+              icon: const Icon(Icons.manage_accounts_rounded),
+              label: const Text('Fix YouTube sign-in'),
+            ),
+          ],
+        ),
+      );
+
+      if (action != _YouTubeAuthAction.manageAccounts ||
+          !mounted ||
+          !dialogContext.mounted) {
+        return;
+      }
+      await Navigator.of(dialogContext, rootNavigator: true).push<void>(
+        MaterialPageRoute(builder: (_) => const CookieManagerPage()),
+      );
+      if (!mounted) return;
+      final selected = ref.read(cookieProvider).selectedCookie;
+      if (selected != null) {
+        final messengerContext = rootNavigatorKey.currentContext;
+        if (messengerContext != null && messengerContext.mounted) {
+          ScaffoldMessenger.of(messengerContext).showSnackBar(
+            SnackBar(
+              content: Text(
+                '${selected.name} is active. Retry the YouTube link.',
+              ),
+              showCloseIcon: true,
+            ),
+          );
+        }
+      }
+    } finally {
+      _youtubeAuthPromptVisible = false;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final mode = ref.watch(themeModeProvider);
@@ -348,6 +444,13 @@ class _MBNDownloaderAppState extends ConsumerState<MBNDownloaderApp>
           previous?.packagePath != next.packagePath) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) unawaited(_showApplicationUpdate(next));
+        });
+      }
+    });
+    ref.listen<YouTubeAuthIssue?>(youtubeAuthIssueProvider, (previous, next) {
+      if (_phase == _StartupPhase.ready && next != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) unawaited(_showYouTubeAuthIssue(next));
         });
       }
     });
@@ -389,6 +492,8 @@ class _MBNDownloaderAppState extends ConsumerState<MBNDownloaderApp>
 }
 
 enum _WindowsCloseAction { minimizeToTray, exit, cancel }
+
+enum _YouTubeAuthAction { later, manageAccounts }
 
 class _StartupSurface extends StatelessWidget {
   const _StartupSurface();

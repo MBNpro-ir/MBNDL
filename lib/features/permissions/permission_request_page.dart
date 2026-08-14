@@ -62,9 +62,10 @@ class _PermissionRequestPageState extends State<PermissionRequestPage>
       setState(() => _permissions = state);
       if (!granted || !state.allGranted) {
         setState(() {
-          _message =
-              'Grant the required access to continue. You can also enable it '
-              'from Android app settings.';
+          _message = !state.downloadFolderReady
+              ? 'Downloads/MBNDL is not writable: ${state.storageMessage}'
+              : 'Grant the required access to continue. You can also enable '
+                    'it from Android app settings.';
         });
         return;
       }
@@ -142,12 +143,23 @@ class _PermissionRequestPageState extends State<PermissionRequestPage>
                     _PermissionTile(
                       icon: Icons.folder_copy_rounded,
                       title: 'Downloads / MBNDL',
-                      description:
-                          'Android secure storage publishes completed media so '
-                          'it remains visible in your file manager.',
+                      description: permissions.downloadFolderReady
+                          ? 'Verified by writing through Android MediaStore. '
+                                'Completed files will be visible in your file manager.'
+                          : permissions.storageMessage,
                       granted: permissions.downloadFolderReady,
                       required: true,
                     ),
+                    if (permissions.workingPath.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: SelectableText(
+                          'Working folder: ${permissions.workingPath}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
+                    ],
                     if (permissions.storageRequired) ...[
                       const SizedBox(height: 10),
                       _PermissionTile(

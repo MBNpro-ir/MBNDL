@@ -64,10 +64,26 @@ class CustomPreset {
     isBuiltIn: true,
   );
 
-  static CustomPreset ipLimitedPreset() => CustomPreset(
-    id: 'ip_limited',
-    name: 'SLOW CONNECTION',
-    settings: YtDlpSettings.ipLimitedPreset(),
+  static CustomPreset resilientPreset() => CustomPreset(
+    id: 'resilient',
+    name: 'Unstable Connection',
+    settings: YtDlpSettings.resilientPreset(),
+    createdAt: DateTime.now(),
+    isBuiltIn: true,
+  );
+
+  static CustomPreset gentleYouTubePreset() => CustomPreset(
+    id: 'gentle_youtube',
+    name: 'Gentle YouTube',
+    settings: YtDlpSettings.gentleYouTubePreset(),
+    createdAt: DateTime.now(),
+    isBuiltIn: true,
+  );
+
+  static CustomPreset limitedBandwidthPreset() => CustomPreset(
+    id: 'limited_bandwidth',
+    name: 'Limited Bandwidth',
+    settings: YtDlpSettings.limitedBandwidthPreset(),
     createdAt: DateTime.now(),
     isBuiltIn: true,
   );
@@ -75,6 +91,8 @@ class CustomPreset {
   static List<CustomPreset> builtInPresets() => [
     defaultPreset(),
     speedPreset(),
-    ipLimitedPreset(),
+    resilientPreset(),
+    gentleYouTubePreset(),
+    limitedBandwidthPreset(),
   ];
 }

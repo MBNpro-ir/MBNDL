@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../shared/models/video_format.dart';
@@ -9,6 +11,7 @@ class FormatDownloadJob {
     required this.label,
     required this.primaryFormat,
     this.secondaryFormat,
+    this.previousDownloadCount = 0,
   });
 
   final String formatSelector;
@@ -16,6 +19,9 @@ class FormatDownloadJob {
   final String label;
   final VideoFormat primaryFormat;
   final VideoFormat? secondaryFormat;
+  final int previousDownloadCount;
+
+  bool get wasDownloadedBefore => previousDownloadCount > 0;
 
   String get quality {
     if (downloadType == 'audio') {
@@ -51,10 +57,12 @@ class FormatSelectionPage extends StatefulWidget {
     super.key,
     required this.formats,
     required this.videoTitle,
+    this.previousDownloads = const {},
   });
 
   final List<VideoFormat> formats;
   final String videoTitle;
+  final Map<String, int> previousDownloads;
 
   @override
   State<FormatSelectionPage> createState() => _FormatSelectionPageState();
@@ -74,7 +82,9 @@ class _FormatSelectionPageState extends State<FormatSelectionPage>
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-    final bestCombined = _combinedFormats.firstOrNull;
+    final bestCombined = _combinedFormats
+        .where((format) => !_wasFormatUsed(format.formatId))
+        .firstOrNull;
     if (bestCombined != null) _combined.add(bestCombined.formatId);
   }
 
@@ -112,7 +122,43 @@ class _FormatSelectionPageState extends State<FormatSelectionPage>
 
   bool get _canSmartMerge => _video.length == 1 && _audio.length == 1;
 
-  void _toggle(Set<String> selection, String formatId, bool selected) {
+  bool _wasFormatUsed(String formatId) => widget.previousDownloads.entries.any(
+    (entry) => entry.value > 0 && entry.key.split('+').contains(formatId),
+  );
+
+  int _previousCount(String selector) =>
+      widget.previousDownloads[selector] ?? 0;
+
+  Future<void> _toggle(
+    Set<String> selection,
+    String formatId,
+    bool selected,
+  ) async {
+    if (selected && _wasFormatUsed(formatId)) {
+      final proceed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          icon: const Icon(Icons.download_done_rounded),
+          title: const Text('This quality was downloaded before'),
+          content: const Text(
+            'History shows an existing download that used this stream. You '
+            'can continue; MBNDL will create a clearly named copy and will '
+            'not overwrite the earlier file.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Download another copy'),
+            ),
+          ],
+        ),
+      );
+      if (proceed != true || !mounted) return;
+    }
     setState(() {
       selected ? selection.add(formatId) : selection.remove(formatId);
       if (!_canSmartMerge) _smartMerge = false;
@@ -132,6 +178,7 @@ class _FormatSelectionPageState extends State<FormatSelectionPage>
             downloadType: 'combined',
             label: format.displayName,
             primaryFormat: format,
+            previousDownloadCount: _previousCount(format.formatId),
           );
         }(),
     ];
@@ -146,6 +193,9 @@ class _FormatSelectionPageState extends State<FormatSelectionPage>
           label: 'Smart merge • ${video.displayName} + ${audio.displayName}',
           primaryFormat: video,
           secondaryFormat: audio,
+          previousDownloadCount: _previousCount(
+            '${video.formatId}+${audio.formatId}',
+          ),
         ),
       );
     } else {
@@ -157,6 +207,7 @@ class _FormatSelectionPageState extends State<FormatSelectionPage>
             downloadType: 'video',
             label: 'Video only • ${format.displayName}',
             primaryFormat: format,
+            previousDownloadCount: _previousCount(format.formatId),
           ),
         );
       }
@@ -168,6 +219,7 @@ class _FormatSelectionPageState extends State<FormatSelectionPage>
             downloadType: 'audio',
             label: 'Audio only • ${format.displayName}',
             primaryFormat: format,
+            previousDownloadCount: _previousCount(format.formatId),
           ),
         );
       }
@@ -242,7 +294,8 @@ class _FormatSelectionPageState extends State<FormatSelectionPage>
                   emptyDescription:
                       'Choose a video stream and an audio stream instead.',
                   onChanged: (format, selected) =>
-                      _toggle(_combined, format.formatId, selected),
+                      unawaited(_toggle(_combined, format.formatId, selected)),
+                  wasDownloaded: _wasFormatUsed,
                 ),
                 _FormatList(
                   formats: _videoFormats,
@@ -251,7 +304,8 @@ class _FormatSelectionPageState extends State<FormatSelectionPage>
                   emptyDescription:
                       'This source only exposes combined formats.',
                   onChanged: (format, selected) =>
-                      _toggle(_video, format.formatId, selected),
+                      unawaited(_toggle(_video, format.formatId, selected)),
+                  wasDownloaded: _wasFormatUsed,
                 ),
                 _FormatList(
                   formats: _audioFormats,
@@ -260,7 +314,8 @@ class _FormatSelectionPageState extends State<FormatSelectionPage>
                   emptyDescription:
                       'This source only exposes ready-to-play formats.',
                   onChanged: (format, selected) =>
-                      _toggle(_audio, format.formatId, selected),
+                      unawaited(_toggle(_audio, format.formatId, selected)),
+                  wasDownloaded: _wasFormatUsed,
                 ),
               ],
             ),
@@ -368,6 +423,7 @@ class _FormatList extends StatelessWidget {
     required this.emptyTitle,
     required this.emptyDescription,
     required this.onChanged,
+    required this.wasDownloaded,
   });
 
   final List<VideoFormat> formats;
@@ -375,6 +431,7 @@ class _FormatList extends StatelessWidget {
   final String emptyTitle;
   final String emptyDescription;
   final void Function(VideoFormat format, bool selected) onChanged;
+  final bool Function(String formatId) wasDownloaded;
 
   @override
   Widget build(BuildContext context) {
@@ -405,15 +462,17 @@ class _FormatList extends StatelessWidget {
             crossAxisCount: columns,
             crossAxisSpacing: 12,
             mainAxisSpacing: 12,
-            mainAxisExtent: 112,
+            mainAxisExtent: 136,
           ),
           itemCount: formats.length,
           itemBuilder: (context, index) {
             final format = formats[index];
             final selected = selectedIds.contains(format.formatId);
+            final downloaded = wasDownloaded(format.formatId);
             return _FormatCard(
               format: format,
               selected: selected,
+              downloaded: downloaded,
               onChanged: (value) => onChanged(format, value),
             );
           },
@@ -428,10 +487,12 @@ class _FormatCard extends StatelessWidget {
     required this.format,
     required this.selected,
     required this.onChanged,
+    required this.downloaded,
   });
 
   final VideoFormat format;
   final bool selected;
+  final bool downloaded;
   final ValueChanged<bool> onChanged;
 
   @override
@@ -444,7 +505,11 @@ class _FormatCard extends StatelessWidget {
       'ID ${format.formatId}',
     ];
     return Card(
-      color: selected ? colors.secondaryContainer : colors.surfaceContainerLow,
+      color: downloaded
+          ? colors.tertiaryContainer
+          : selected
+          ? colors.secondaryContainer
+          : colors.surfaceContainerLow,
       child: InkWell(
         onTap: () => onChanged(!selected),
         borderRadius: BorderRadius.circular(24),
@@ -468,6 +533,17 @@ class _FormatCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontWeight: FontWeight.w700),
                     ),
+                    if (downloaded) ...[
+                      const SizedBox(height: 5),
+                      Text(
+                        'Downloaded before',
+                        style: Theme.of(context).textTheme.labelMedium
+                            ?.copyWith(
+                              color: colors.onTertiaryContainer,
+                              fontWeight: FontWeight.w800,
+                            ),
+                      ),
+                    ],
                     const SizedBox(height: 6),
                     Text(
                       details.join('  •  '),
@@ -487,7 +563,11 @@ class _FormatCard extends StatelessWidget {
                           ? Icons.movie_filter_rounded
                           : Icons.videocam_outlined
                     : Icons.graphic_eq_rounded,
-                color: selected ? colors.onSecondaryContainer : colors.primary,
+                color: downloaded
+                    ? colors.onTertiaryContainer
+                    : selected
+                    ? colors.onSecondaryContainer
+                    : colors.primary,
               ),
             ],
           ),

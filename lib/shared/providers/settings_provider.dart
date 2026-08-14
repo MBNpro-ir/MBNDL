@@ -101,7 +101,9 @@ class YtDlpSettingsNotifier extends Notifier<YtDlpSettings> {
       final raw = document?['ytdlp_settings'];
       if (raw is! Map) return;
 
-      var loaded = YtDlpSettings.fromJson(Map<String, dynamic>.from(raw));
+      var loaded = YtDlpSettings.fromJson(
+        Map<String, dynamic>.from(raw),
+      ).normalizedForAppPolicy();
       if (Platform.isAndroid &&
           loaded.downloadPath.isNotEmpty &&
           !loaded.downloadPath.contains('/Android/data/com.mbn.dl/') &&
@@ -119,12 +121,16 @@ class YtDlpSettingsNotifier extends Notifier<YtDlpSettings> {
   }
 
   Future<void> updateSettings(YtDlpSettings settings) async {
-    state = settings;
+    var normalized = settings.normalizedForAppPolicy();
+    if (!Platform.isAndroid && normalized.useAria2c) {
+      normalized = normalized.copyWith(useAria2c: false);
+    }
+    state = normalized;
     try {
       final document = Map<String, dynamic>.from(
         await SettingsStorageService.instance.loadSettings() ?? const {},
       );
-      document['ytdlp_settings'] = settings.toJson();
+      document['ytdlp_settings'] = normalized.toJson();
       final saved = await SettingsStorageService.instance.saveSettings(
         document,
       );
@@ -137,10 +143,39 @@ class YtDlpSettingsNotifier extends Notifier<YtDlpSettings> {
   Future<void> loadPreset(String name) async {
     final preset = switch (name) {
       'speed' => YtDlpSettings.speedPreset(),
-      'ip_limited' => YtDlpSettings.ipLimitedPreset(),
+      'resilient' => YtDlpSettings.resilientPreset(),
+      'gentle_youtube' => YtDlpSettings.gentleYouTubePreset(),
+      'limited_bandwidth' => YtDlpSettings.limitedBandwidthPreset(),
       _ => YtDlpSettings.defaultPreset(),
     };
-    await updateSettings(preset);
+    await applyTransportPreset(name: name, preset: preset);
+  }
+
+  Future<void> applyTransportPreset({
+    required String name,
+    required YtDlpSettings preset,
+  }) async {
+    // Presets tune transport behavior only. They must never erase the user's
+    // download location, engine channel, caption defaults, or advanced choices.
+    await updateSettings(
+      state.copyWith(
+        preset: name,
+        concurrentFragments: preset.concurrentFragments,
+        retries: preset.retries,
+        fragmentRetries: preset.fragmentRetries,
+        fileAccessRetries: preset.fileAccessRetries,
+        rateLimit: preset.rateLimit,
+        throttledRate: preset.throttledRate,
+        useAria2c: preset.useAria2c,
+        bufferSize: preset.bufferSize,
+        httpChunkSize: preset.httpChunkSize,
+        socketTimeout: preset.socketTimeout,
+        minSleepInterval: preset.minSleepInterval,
+        maxSleepInterval: preset.maxSleepInterval,
+        retrySleep: preset.retrySleep,
+        sleepRequests: preset.sleepRequests,
+      ),
+    );
   }
 }
 

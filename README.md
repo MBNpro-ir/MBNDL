@@ -45,7 +45,7 @@ When closing MBNDL on Windows, choose **Minimize to tray**, **Exit**, or **Cance
 4. Paste a link and choose the desired formats.
 5. Completed media, covers, and subtitles are published under `Downloads/MBNDL`.
 
-MBNDL uses Android’s secure MediaStore API on Android 10 and newer. It does **not** request broad “all files” access. Android 9 and older request only the legacy storage permission required by those systems.
+MBNDL uses Android’s secure MediaStore API on Android 10 and newer. It does **not** request broad “all files” access. The first-run gate performs a real write/delete probe in `Downloads/MBNDL`, so a false permission state cannot hide an unusable folder. Android 9 and older request only the legacy storage permission required by those systems.
 
 ### 🎛️ Choosing formats
 
@@ -54,6 +54,16 @@ MBNDL uses Android’s secure MediaStore API on Android 10 and newer. It does **
 - **Audio** — select one or several audio-only streams.
 - **Smart merge** — select exactly one video and one audio stream, then enable this option to create one playable file with FFmpeg.
 - **Save cover / Save subtitles** — keep these artifacts with the download and expose them in History.
+
+Formats already found in the managed download folders are highlighted in green. You can still select one, but MBNDL warns first and creates a clearly named `(copy N)` file instead of overwriting the existing download. Playlist URLs are recognized automatically; playlist switches are not exposed as manual settings.
+
+### 🔐 YouTube accounts
+
+When YouTube returns a **Sign in to confirm you’re not a bot** error, MBNDL opens a focused recovery prompt. Go to **Settings → YouTube Accounts** to save, switch, refresh, disable, or sign out up to three accounts. The selected account is used only for YouTube and YouTube Music links; anonymous access remains the default.
+
+yt-dlp no longer supports YouTube OAuth. Android and Windows also prevent one app from silently reading another app’s browser session, so MBNDL never asks for a Google email/password and does not pretend that a browser login can be captured automatically. Instead it opens the official sign-in page in the external browser and accepts a YouTube-only Netscape `cookies.txt` export. Cookie contents are encrypted at rest and materialized only while yt-dlp is running. Delete the unencrypted export after importing it. See the [official yt-dlp YouTube cookie guide](https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies).
+
+> ⚠️ yt-dlp warns that using an account can lead to temporary or permanent YouTube restrictions. Use account cookies only when content requires them, keep request rates low, and consider a separate account. The **Gentle YouTube** preset adds the recommended 5–10 second delay but cannot remove this risk.
 
 ### 🔄 Application updates
 
@@ -97,7 +107,7 @@ MBNDL یک دانلود منیجر ساده و مدرن بر پایهٔ yt-dlp �
 2. در اجرای اول، صفحهٔ دسترسی‌های لازم را کامل کنید.
 3. فایل‌های نهایی، کاورها و زیرنویس‌ها در `Downloads/MBNDL` منتشر می‌شوند.
 
-در اندروید ۱۰ به بالا برنامه از MediaStore استفاده می‌کند و به مجوز خطرناک دسترسی به تمام فایل‌ها نیازی ندارد. فقط در اندروید ۹ و قدیمی‌تر مجوز قدیمی Storage درخواست می‌شود.
+در اندروید ۱۰ به بالا برنامه طبق [راهنمای رسمی MediaStore اندروید](https://developer.android.com/training/data-storage/shared/media) از MediaStore استفاده می‌کند و به مجوز خطرناک دسترسی به تمام فایل‌ها نیازی ندارد. صفحهٔ راه‌اندازی با ساخت و حذف یک فایل آزمایشی، قابل‌نوشتن‌بودن واقعی `Downloads/MBNDL` را بررسی می‌کند؛ بنابراین دیگر صرفاً براساس وضعیت ظاهری Permission عبور نمی‌کند. فقط در اندروید ۹ و قدیمی‌تر مجوز قدیمی Storage درخواست می‌شود.
 
 ### 🔄 آپدیت خودکار برنامه
 
@@ -117,6 +127,16 @@ MBNDL یک دانلود منیجر ساده و مدرن بر پایهٔ yt-dlp �
 - صفحهٔ Downloads دارای نمای ساده و گروه‌بندی‌شده، جست‌وجو، فیلتر تاریخ/وضعیت/نوع فایل، مرتب‌سازی، Retry، Cancel، Share، تشخیص فایل حذف‌شده و نمایش کاور و زیرنویس است.
 - خطاهای رایج yt-dlp و FFmpeg با متن قابل‌فهم و راه‌حل پیشنهادی نمایش داده می‌شوند.
 
+کیفیت‌هایی که فایلشان از قبل در پوشه‌های مدیریت‌شده وجود دارد با رنگ سبز مشخص می‌شوند. انتخاب دوبارهٔ آن‌ها پس از هشدار مجاز است و برنامه به‌جای overwrite، فایل جدید را با نام `(copy N)` ذخیره می‌کند. لینک Playlist نیز به‌صورت خودکار تشخیص داده می‌شود و تنظیم دستی جداگانه‌ای ندارد.
+
+### 🔐 حساب‌های یوتیوب
+
+اگر یوتیوب خطای **Sign in to confirm you’re not a bot** برگرداند، برنامه یک راهنمای اختصاصی نشان می‌دهد. در مسیر **Settings → YouTube Accounts** می‌توانید تا سه حساب را ذخیره، فعال، تعویض، غیرفعال، Refresh یا Sign out کنید. حساب فعال فقط برای لینک‌های YouTube و YouTube Music استفاده می‌شود و حالت ناشناس همچنان پیش‌فرض است.
+
+OAuth یوتیوب دیگر توسط yt-dlp پشتیبانی نمی‌شود و Android/Windows اجازه نمی‌دهند برنامه کوکی مرورگر دیگری را مخفیانه بخواند. به همین دلیل MBNDL هیچ‌وقت ایمیل یا رمز Google را درخواست نمی‌کند. صفحهٔ رسمی ورود در مرورگر خارجی باز می‌شود و سپس فقط فایل `cookies.txt` با فرمت Netscape و دامنهٔ YouTube/Google وارد می‌شود. محتوای کوکی در حالت ذخیره رمزنگاری شده و فقط هنگام اجرای yt-dlp موقتاً روی دیسک قرار می‌گیرد. فایل خروجی رمزنگاری‌نشده را پس از Import حذف کنید. جزئیات در [راهنمای رسمی کوکی یوتیوب yt-dlp](https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies) آمده است.
+
+> ⚠️ طبق هشدار رسمی yt-dlp، استفادهٔ خودکار از حساب ممکن است باعث محدودیت یا بن موقت/دائمی شود. فقط در صورت نیاز از حساب استفاده کنید و نرخ درخواست را پایین نگه دارید. پریست **Gentle YouTube** بین دانلودها ۵ تا ۱۰ ثانیه مکث ایجاد می‌کند، اما خطر را صفر نمی‌کند.
+
 </div>
 
 ---
@@ -131,6 +151,7 @@ MBNDL یک دانلود منیجر ساده و مدرن بر پایهٔ yt-dlp �
 | State | Riverpod |
 | Navigation | GoRouter |
 | Downloads library | SQLite (`sqflite` / `sqflite_common_ffi`) |
+| YouTube accounts | Encrypted secure storage + temporary YouTube-only Netscape cookie materialization |
 | App updates | GitHub Releases API, SHA-256 verification, Android installer, Windows sidecar |
 | Windows downloads | Official standalone yt-dlp + minimal FFmpeg/FFprobe bootstrap |
 | Android downloads | `youtubedl-android`, foreground service, and MediaStore publication |
@@ -139,12 +160,12 @@ MBNDL یک دانلود منیجر ساده و مدرن بر پایهٔ yt-dlp �
 ### How a download works
 
 1. The app validates the URL and ensures the local download tools are ready.
-2. yt-dlp extracts metadata and formats using the active proxy, cookies, and JavaScript-runtime settings.
+2. yt-dlp extracts metadata and formats using the active proxy and JavaScript-runtime settings; the active encrypted account is materialized only for classified YouTube URLs.
 3. The full-screen picker returns one or more independent download jobs.
 4. Each job is persisted to SQLite, then consumed by a reliable serial queue. A job always moves from Queued to Preparing or to a stored actionable failure.
 5. yt-dlp downloads the selected stream; FFmpeg merges or post-processes only when required.
 6. MBNDL discovers the output, cover, and subtitle files and saves those relationships in History.
-7. Android copies completed artifacts into `Downloads/MBNDL` through MediaStore.
+7. Android copies completed artifacts into `Downloads/MBNDL` through MediaStore and queries that public collection when marking previously downloaded formats.
 
 ### Windows offline bootstrap and updates
 

@@ -127,7 +127,7 @@ class YtDlpSettings {
     this.downloadThumbnailEnabled = false,
     // Download Settings
     this.downloadPath = '',
-    this.concurrentFragments = 1,
+    this.concurrentFragments = 4,
     this.retries = 10,
     this.fragmentRetries = 10,
     this.fileAccessRetries = 3,
@@ -160,7 +160,7 @@ class YtDlpSettings {
     this.maxDownloads = 0,
     this.breakOnExisting = false,
     // File Settings
-    this.outputTemplate = '%(title)s.%(ext)s',
+    this.outputTemplate = '%(title)s [%(id)s] [%(format_id)s].%(ext)s',
     this.keepFragments = false,
     this.overwriteFiles = false,
     this.continueDownload = true,
@@ -410,16 +410,72 @@ class YtDlpSettings {
     );
   }
 
+  /// Removes flags that MBNDL owns as part of the download workflow. Old
+  /// settings files may still contain these fields, but they must not override
+  /// playlist detection, duplicate handling, format selection, or artifacts
+  /// chosen on the format screen.
+  YtDlpSettings normalizedForAppPolicy() => copyWith(
+    downloadPlaylist: true,
+    playlistItems: '',
+    playlistRandom: false,
+    lazyPlaylist: false,
+    skipPlaylistAfterErrors: 0,
+    enableFileUrls: false,
+    cookiesFile: '',
+    minFilesize: '',
+    maxFilesize: '',
+    date: '',
+    datebefore: '',
+    dateafter: '',
+    maxDownloads: 0,
+    breakOnExisting: false,
+    outputTemplate: '%(title)s [%(id)s] [%(format_id)s].%(ext)s',
+    keepFragments: false,
+    overwriteFiles: false,
+    continueDownload: true,
+    noPartFiles: false,
+    restrictFilenames: false,
+    windowsFilenames: false,
+    trimFilenameLength: 0,
+    writeThumbnail: false,
+    writeAllThumbnails: false,
+    writeDescription: false,
+    writeInfoJson: false,
+    writeComments: false,
+    downloadSubtitles: false,
+    embedSubtitles: false,
+    convertSubtitles: '',
+    embedThumbnail: false,
+    embedMetadata: true,
+    embedChapters: false,
+    extractAudio: false,
+    audioFormat: '',
+    remuxVideo: '',
+    recodeVideo: '',
+    keepVideo: false,
+    splitChapters: false,
+    convertThumbnails: '',
+    sponsorblockMark: false,
+    sponsorblockMarkCategories: '',
+    sponsorblockRemove: false,
+    sponsorblockRemoveCategories: '',
+    quiet: false,
+    noWarnings: false,
+    ignoreErrors: false,
+    cookiesFromBrowser: '',
+    downloadArchive: '',
+    breakPerInput: false,
+    liveFromStart: false,
+    waitForVideo: '',
+  );
+
   List<String> toYtDlpArgs() {
     final args = <String>['--ignore-config'];
 
-    // Format selection
     if (selectedFormatId != null && selectedFormatId!.isNotEmpty) {
       args.addAll(['-f', selectedFormatId!]);
     }
 
-    // Official executables include yt-dlp-ejs. Android additionally bundles
-    // QuickJS; desktop may use a runtime selected here or auto-detection.
     if (jsRuntime != 'auto') {
       args.add('--no-js-runtimes');
       final runtime = jsRuntimePath.trim().isEmpty
@@ -431,13 +487,14 @@ class YtDlpSettings {
       args.addAll(['--remote-components', 'ejs:github']);
     }
 
-    // Download options
-    if (concurrentFragments > 1) args.addAll(['-N', '$concurrentFragments']);
+    if (concurrentFragments > 1) {
+      args.addAll(['-N', '$concurrentFragments']);
+    }
     args.addAll(['-R', '$retries']);
-    if (fragmentRetries > 10) {
+    if (fragmentRetries != 10) {
       args.addAll(['--fragment-retries', '$fragmentRetries']);
     }
-    if (fileAccessRetries > 3) {
+    if (fileAccessRetries != 3) {
       args.addAll(['--file-access-retries', '$fileAccessRetries']);
     }
     if (rateLimit.isNotEmpty) args.addAll(['-r', rateLimit]);
@@ -448,7 +505,6 @@ class YtDlpSettings {
     if (httpChunkSize.isNotEmpty) {
       args.addAll(['--http-chunk-size', httpChunkSize]);
     }
-
     if (useAria2c) {
       args.addAll([
         '--downloader',
@@ -458,16 +514,6 @@ class YtDlpSettings {
       ]);
     }
 
-    // Playlist
-    if (!downloadPlaylist) args.add('--no-playlist');
-    if (playlistItems.isNotEmpty) args.addAll(['-I', playlistItems]);
-    if (playlistRandom) args.add('--playlist-random');
-    if (lazyPlaylist) args.add('--lazy-playlist');
-    if (skipPlaylistAfterErrors > 0) {
-      args.addAll(['--skip-playlist-after-errors', '$skipPlaylistAfterErrors']);
-    }
-
-    // Network
     if (proxy.isNotEmpty) args.addAll(['--proxy', proxy]);
     args.addAll(['--socket-timeout', '$socketTimeout']);
     if (sourceAddress.isNotEmpty) {
@@ -478,96 +524,8 @@ class YtDlpSettings {
     } else if (forceIpv6) {
       args.add('-6');
     }
-    if (enableFileUrls) args.add('--enable-file-urls');
 
-    // Authentication
-    if (cookiesFile.isNotEmpty) args.addAll(['--cookies', cookiesFile]);
-
-    // Video selection
-    if (minFilesize.isNotEmpty) args.addAll(['--min-filesize', minFilesize]);
-    if (maxFilesize.isNotEmpty) args.addAll(['--max-filesize', maxFilesize]);
-    if (date.isNotEmpty) args.addAll(['--date', date]);
-    if (datebefore.isNotEmpty) args.addAll(['--datebefore', datebefore]);
-    if (dateafter.isNotEmpty) args.addAll(['--dateafter', dateafter]);
-    if (maxDownloads > 0) args.addAll(['--max-downloads', '$maxDownloads']);
-    if (breakOnExisting) args.add('--break-on-existing');
-    if (downloadArchive.isNotEmpty) {
-      args.addAll(['--download-archive', downloadArchive]);
-    }
-    if (breakPerInput) args.add('--break-per-input');
-    if (liveFromStart) args.add('--live-from-start');
-    if (waitForVideo.isNotEmpty) {
-      args.addAll(['--wait-for-video', waitForVideo]);
-    }
-
-    // File options
-    args.addAll(['-o', outputTemplate]);
-    if (keepFragments) args.add('--keep-fragments');
-    if (overwriteFiles) args.add('--force-overwrites');
-    if (!continueDownload) args.add('--no-continue');
-    if (noPartFiles) args.add('--no-part');
-    if (restrictFilenames) args.add('--restrict-filenames');
-    if (windowsFilenames) args.add('--windows-filenames');
-    if (trimFilenameLength > 0) {
-      args.addAll(['--trim-filenames', '$trimFilenameLength']);
-    }
-    if (writeThumbnail) args.add('--write-thumbnail');
-    if (writeAllThumbnails) args.add('--write-all-thumbnails');
-    if (writeDescription) args.add('--write-description');
-    if (writeInfoJson) args.add('--write-info-json');
-    if (writeComments) args.add('--write-comments');
-
-    // Subtitles
-    if (downloadSubtitles) {
-      args.add('--write-subs');
-      if (autoSubtitles) args.add('--write-auto-subs');
-      args.addAll([
-        '--sub-langs',
-        subtitleLanguages,
-        '--sub-format',
-        subtitleFormat,
-      ]);
-    }
-    if (convertSubtitles.isNotEmpty) {
-      args.addAll(['--convert-subs', convertSubtitles]);
-    }
-
-    // Post-processing
-    if (embedThumbnail) args.add('--embed-thumbnail');
-    if (embedMetadata) args.add('--embed-metadata');
-    if (embedChapters) args.add('--embed-chapters');
-    if (embedSubtitles) args.add('--embed-subs');
-    if (extractAudio) {
-      args.add('-x');
-      if (audioFormat.isNotEmpty) args.addAll(['--audio-format', audioFormat]);
-      if (audioQuality.isNotEmpty) {
-        args.addAll(['--audio-quality', audioQuality]);
-      }
-    }
-    if (remuxVideo.isNotEmpty) args.addAll(['--remux-video', remuxVideo]);
-    if (recodeVideo.isNotEmpty) args.addAll(['--recode-video', recodeVideo]);
-    if (keepVideo) args.add('-k');
-    if (splitChapters) args.add('--split-chapters');
-    if (convertThumbnails.isNotEmpty) {
-      args.addAll(['--convert-thumbnails', convertThumbnails]);
-    }
-
-    // SponsorBlock
-    if (sponsorblockMark && sponsorblockMarkCategories.isNotEmpty) {
-      args.addAll(['--sponsorblock-mark', sponsorblockMarkCategories]);
-    }
-    if (sponsorblockRemove && sponsorblockRemoveCategories.isNotEmpty) {
-      args.addAll(['--sponsorblock-remove', sponsorblockRemoveCategories]);
-    }
-
-    // Advanced
-    if (verbose) {
-      args.add('-v');
-    } else if (quiet) {
-      args.add('-q');
-    }
-    if (noWarnings) args.add('--no-warnings');
-    if (ignoreErrors) args.add('-i');
+    if (verbose) args.add('-v');
     if (userAgent.isNotEmpty) args.addAll(['--user-agent', userAgent]);
     if (minSleepInterval.isNotEmpty) {
       args.addAll(['--min-sleep-interval', minSleepInterval]);
@@ -588,13 +546,12 @@ class YtDlpSettings {
     if (impersonateTarget.isNotEmpty) {
       args.addAll(['--impersonate', impersonateTarget]);
     }
-    if (cookiesFromBrowser.isNotEmpty) {
-      args.addAll(['--cookies-from-browser', cookiesFromBrowser]);
-    }
 
-    args.addAll(['--no-color']);
-
-    args.addAll(customArgs);
+    // MBNDL owns playlist detection, output naming, duplicate handling,
+    // subtitles, covers and post-processing. These safe defaults cannot be
+    // overridden by stale settings files.
+    args.addAll(['--continue', '--no-overwrites', '--embed-metadata']);
+    args.add('--no-color');
     return args;
   }
 
@@ -624,9 +581,9 @@ class YtDlpSettings {
     } else if (forceIpv6) {
       args.add('-6');
     }
-    if (cookiesFile.isNotEmpty) args.addAll(['--cookies', cookiesFile]);
-    if (cookiesFromBrowser.isNotEmpty) {
-      args.addAll(['--cookies-from-browser', cookiesFromBrowser]);
+    if (retrySleep.isNotEmpty) args.addAll(['--retry-sleep', retrySleep]);
+    if (sleepRequests.isNotEmpty) {
+      args.addAll(['--sleep-requests', sleepRequests]);
     }
     if (userAgent.isNotEmpty) args.addAll(['--user-agent', userAgent]);
     if (extractorArgs.isNotEmpty) {
@@ -791,7 +748,9 @@ class YtDlpSettings {
       dateafter: json['dateafter'] ?? '',
       maxDownloads: json['maxDownloads'] ?? 0,
       breakOnExisting: json['breakOnExisting'] ?? false,
-      outputTemplate: json['outputTemplate'] ?? '%(title)s.%(ext)s',
+      outputTemplate:
+          json['outputTemplate'] ??
+          '%(title)s [%(id)s] [%(format_id)s].%(ext)s',
       keepFragments: json['keepFragments'] ?? false,
       overwriteFiles: json['overwriteFiles'] ?? false,
       continueDownload: json['continueDownload'] ?? true,
@@ -849,48 +808,54 @@ class YtDlpSettings {
   // Preset factory methods
   factory YtDlpSettings.defaultPreset() => const YtDlpSettings(
     preset: 'default',
-    embedMetadata: true,
-    embedThumbnail: true,
-    continueDownload: true,
+    concurrentFragments: 4,
+    retries: 10,
+    fragmentRetries: 10,
+    fileAccessRetries: 3,
+    socketTimeout: 20,
   );
 
   factory YtDlpSettings.speedPreset() => const YtDlpSettings(
     preset: 'speed',
-    useAria2c: true,
+    // Keep the built-in preset portable. The optional aria2c engine is
+    // available on Android, but it is not bundled with the Windows release.
+    useAria2c: false,
     concurrentFragments: 8,
-    bufferSize: '16K',
-    embedMetadata: true,
-    continueDownload: true,
+    retries: 10,
+    fragmentRetries: 10,
+    socketTimeout: 20,
   );
 
-  factory YtDlpSettings.ipLimitedPreset() => const YtDlpSettings(
-    preset: 'ip_limited',
-    // Use aria2c for better connection management
-    useAria2c: true,
-    concurrentFragments: 1, // Single connection to avoid detection
-    // Retry settings
+  factory YtDlpSettings.resilientPreset() => const YtDlpSettings(
+    preset: 'resilient',
+    useAria2c: false,
+    concurrentFragments: 1,
     retries: 30,
     fragmentRetries: 30,
     fileAccessRetries: 10,
-    // Rate limiting to avoid detection
-    throttledRate: '500K', // Slow down to appear more human-like
-    minSleepInterval: '3', // Minimum sleep between requests
-    maxSleepInterval: '8', // Maximum sleep between requests
-    // Network settings
-    socketTimeout: 60, // Longer timeout for slow connections
-    // User Agent - appears as regular browser
-    userAgent:
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    // File settings
-    continueDownload: true,
-    noPartFiles: false, // Keep part files for resume
-    // Embed metadata
-    embedMetadata: true,
-    embedThumbnail: false, // Disable to speed up
-    // Minimal processing
-    verbose: false,
-    quiet: false,
-    noWarnings: true,
-    ignoreErrors: true, // Continue on errors
+    socketTimeout: 60,
+    retrySleep: 'http:exp=1:20',
+  );
+
+  factory YtDlpSettings.gentleYouTubePreset() => const YtDlpSettings(
+    preset: 'gentle_youtube',
+    concurrentFragments: 1,
+    retries: 10,
+    fragmentRetries: 10,
+    fileAccessRetries: 3,
+    socketTimeout: 30,
+    minSleepInterval: '5',
+    maxSleepInterval: '10',
+    sleepRequests: '1',
+  );
+
+  factory YtDlpSettings.limitedBandwidthPreset() => const YtDlpSettings(
+    preset: 'limited_bandwidth',
+    concurrentFragments: 1,
+    retries: 20,
+    fragmentRetries: 20,
+    fileAccessRetries: 5,
+    rateLimit: '2M',
+    socketTimeout: 60,
   );
 }

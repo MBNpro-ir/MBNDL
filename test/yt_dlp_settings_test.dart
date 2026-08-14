@@ -47,9 +47,10 @@ void main() {
         containsAll(['--extractor-args', 'youtube:player_client=web_safari']),
       );
       expect(args, containsAll(['--impersonate', 'chrome']));
-      expect(args, containsAll(['--cookies-from-browser', 'firefox']));
-      expect(args, containsAll(['--download-archive', 'archive.txt']));
-      expect(args, contains('--live-from-start'));
+      expect(args, isNot(contains('--cookies-from-browser')));
+      expect(args, isNot(contains('--download-archive')));
+      expect(args, isNot(contains('--live-from-start')));
+      expect(args, containsAll(['--continue', '--no-overwrites']));
     });
 
     test('migrates older JSON and preserves new preferences', () {
@@ -76,6 +77,25 @@ void main() {
       expect(restored.updateChannel, 'stable');
       expect(restored.allowRemoteComponents, isTrue);
       expect(restored.breakPerInput, isTrue);
+    });
+
+    test('normalizes settings owned by the app workflow', () {
+      const legacy = YtDlpSettings(
+        downloadPath: r'C:\Downloads\MBNDL',
+        downloadPlaylist: false,
+        overwriteFiles: true,
+        writeThumbnail: true,
+        cookiesFromBrowser: 'chrome',
+        quiet: true,
+      );
+
+      final normalized = legacy.normalizedForAppPolicy();
+      expect(normalized.downloadPath, r'C:\Downloads\MBNDL');
+      expect(normalized.downloadPlaylist, isTrue);
+      expect(normalized.overwriteFiles, isFalse);
+      expect(normalized.writeThumbnail, isFalse);
+      expect(normalized.cookiesFromBrowser, isEmpty);
+      expect(normalized.quiet, isFalse);
     });
   });
 }

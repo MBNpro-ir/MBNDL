@@ -2,6 +2,7 @@ package com.mbn.dl
 
 import android.Manifest
 import android.app.DownloadManager
+import android.content.ContentValues
 import android.content.Intent
 import android.content.ClipData
 import android.content.pm.PackageManager
@@ -10,6 +11,7 @@ import android.os.Bundle
 import android.os.Build
 import android.os.Environment
 import android.provider.Settings
+import android.provider.MediaStore
 import android.util.Log
 import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
@@ -153,13 +155,28 @@ class MainActivity : FlutterActivity() {
                     }
                 }
                 "getDownloadPath" -> {
-                    val downloadsRoot = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
-                        ?: filesDir
-                    val downloadDir = File(downloadsRoot, "MBNDL")
+                    val downloadDir = getWorkingDownloadDirectory()
                     if (!downloadDir.exists() && !downloadDir.mkdirs()) {
                         result.error("STORAGE_ERROR", "Could not create download directory", null)
                     } else {
                         result.success(downloadDir.absolutePath)
+                    }
+                }
+                "verifyDownloadStorage" -> {
+                    nativeScope.launch {
+                        val status = verifyDownloadStorage()
+                        runOnUiThread { result.success(status) }
+                    }
+                }
+                "findExistingFormatSelectors" -> {
+                    val mediaId = call.argument<String>("mediaId")?.trim().orEmpty()
+                    if (mediaId.isEmpty()) {
+                        result.success(emptyMap<String, Int>())
+                    } else {
+                        nativeScope.launch {
+                            val selectors = findExistingFormatSelectors(mediaId)
+                            runOnUiThread { result.success(selectors) }
+                        }
                     }
                 }
                 "openDownloads" -> {
@@ -292,6 +309,139 @@ class MainActivity : FlutterActivity() {
             emptyArray()
         }
         else -> emptyArray()
+    }
+
+    private fun getWorkingDownloadDirectory(): File {
+        val downloadsRoot = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+            ?: File(filesDir, "downloads")
+        return File(downloadsRoot, "MBNDL")
+    }
+
+    private fun verifyDownloadStorage(): Map<String, Any?> {
+        val workingDirectory = getWorkingDownloadDirectory()
+        val publicPath = "${Environment.DIRECTORY_DOWNLOADS}/MBNDL"
+        return try {
+            if (!workingDirectory.exists() && !workingDirectory.mkdirs()) {
+                throw IllegalStateException("Could not create the private working folder")
+            }
+            val workingProbe = File(workingDirectory, ".mbndl-write-check")
+            workingProbe.writeText("ok")
+            if (!workingProbe.delete()) workingProbe.deleteOnExit()
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val values = ContentValues().apply {
+                    put(
+                        MediaStore.MediaColumns.DISPLAY_NAME,
+                        "MBNDL-storage-check-${System.currentTimeMillis()}.tmp"
+                    )
+                    put(MediaStore.MediaColumns.MIME_TYPE, "application/octet-stream")
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, publicPath)
+                    put(MediaStore.MediaColumns.IS_PENDING, 1)
+                }
+                val uri = contentResolver.insert(
+                    MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                    values
+                ) ?: throw IllegalStateException("Android rejected the Downloads location")
+                try {
+                    contentResolver.openOutputStream(uri, "w")?.use {
+                        it.write(byteArrayOf(0x4d, 0x42, 0x4e, 0x44, 0x4c))
+                    } ?: throw IllegalStateException("Could not write to Android Downloads")
+                } finally {
+                    contentResolver.delete(uri, null, null)
+                }
+            } else {
+                if (!hasNativePermission("storage")) {
+                    throw SecurityException("Legacy storage permission has not been granted")
+                }
+                @Suppress("DEPRECATION")
+                val publicDirectory = File(
+                    Environment.getExternalStoragePublicDirectory(
+                        Environment.DIRECTORY_DOWNLOADS
+                    ),
+                    "MBNDL"
+                )
+                if (!publicDirectory.exists() && !publicDirectory.mkdirs()) {
+                    throw IllegalStateException("Could not create Downloads/MBNDL")
+                }
+                val publicProbe = File(publicDirectory, ".mbndl-write-check")
+                publicProbe.writeText("ok")
+                if (!publicProbe.delete()) publicProbe.deleteOnExit()
+            }
+
+            mapOf(
+                "ready" to true,
+                "workingPath" to workingDirectory.absolutePath,
+                "publicPath" to publicPath,
+                "message" to "Downloads/MBNDL is writable"
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "Download storage verification failed", e)
+            mapOf(
+                "ready" to false,
+                "workingPath" to workingDirectory.absolutePath,
+                "publicPath" to publicPath,
+                "message" to (e.message ?: "Storage verification failed")
+            )
+        }
+    }
+
+    /**
+     * Reads the user-visible Downloads/MBNDL collection instead of assuming
+     * that the app-private working copy still exists. This also keeps the
+     * green "downloaded before" state accurate after the working directory is
+     * cleaned. Values are counts per yt-dlp format selector.
+     */
+    private fun findExistingFormatSelectors(mediaId: String): Map<String, Int> {
+        val marker = Regex(
+            "\\[${Regex.escape(mediaId)}] \\[([^]]+)]",
+            RegexOption.IGNORE_CASE
+        )
+        val counts = mutableMapOf<String, Int>()
+
+        fun record(name: String) {
+            val selector = marker.find(name)?.groupValues?.getOrNull(1)
+                ?.takeIf { it.isNotBlank() }
+                ?: return
+            counts[selector] = (counts[selector] ?: 0) + 1
+        }
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI
+                val projection = arrayOf(MediaStore.MediaColumns.DISPLAY_NAME)
+                val videoPath = "${Environment.DIRECTORY_DOWNLOADS}/MBNDL/Video"
+                val audioPath = "${Environment.DIRECTORY_DOWNLOADS}/MBNDL/Audio"
+                contentResolver.query(
+                    collection,
+                    projection,
+                    "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ? OR " +
+                        "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?",
+                    arrayOf("$videoPath%", "$audioPath%"),
+                    null
+                )?.use { cursor ->
+                    val nameColumn = cursor.getColumnIndexOrThrow(
+                        MediaStore.MediaColumns.DISPLAY_NAME
+                    )
+                    while (cursor.moveToNext()) record(cursor.getString(nameColumn))
+                }
+            } else if (hasNativePermission("storage")) {
+                @Suppress("DEPRECATION")
+                val publicRoot = File(
+                    Environment.getExternalStoragePublicDirectory(
+                        Environment.DIRECTORY_DOWNLOADS
+                    ),
+                    "MBNDL"
+                )
+                listOf("Video", "Audio").forEach { category ->
+                    File(publicRoot, category).listFiles()
+                        ?.filter { it.isFile && !it.name.endsWith(".part") }
+                        ?.forEach { record(it.name) }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not inspect published MBNDL downloads", e)
+        }
+        return counts
     }
 
     private fun hasNativePermission(permission: String): Boolean {
