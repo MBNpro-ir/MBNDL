@@ -172,15 +172,6 @@ class _FFmpegSettingsState extends State<FFmpegSettings>
           ),
         ),
 
-        const ListTile(
-          leading: Icon(Icons.inventory_2_outlined),
-          title: Text('Minimal yt-dlp toolset'),
-          subtitle: Text(
-            'The app includes and updates only ffmpeg.exe and ffprobe.exe. '
-            'FFplay, HTML documentation and presets are skipped.',
-          ),
-        ),
-
         if (_latestVersion != null)
           ListTile(
             leading: const Icon(Icons.new_releases_outlined),

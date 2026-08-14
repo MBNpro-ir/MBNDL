@@ -21,6 +21,8 @@ enum _ArtifactFilter { all, cover, subtitles, missing }
 
 enum _HistoryMenuAction { clearCompleted, clearAll }
 
+enum _BulkAction { retry, cancel, remove }
+
 class HistoryPage extends ConsumerStatefulWidget {
   const HistoryPage({super.key});
 
@@ -34,6 +36,8 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
   _DateFilter _date = _DateFilter.all;
   _MediaFilter _media = _MediaFilter.all;
   _ArtifactFilter _artifact = _ArtifactFilter.all;
+  bool _selectionMode = false;
+  final Set<int> _selectedIds = <int>{};
 
   @override
   void dispose() {
@@ -60,35 +64,100 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
             SliverAppBar.large(
-              title: const Text('Downloads'),
+              title: Text(
+                _selectionMode
+                    ? '${_selectedIds.length} selected'
+                    : 'Downloads',
+              ),
               actions: [
-                IconButton(
-                  tooltip: 'Open Downloads/MBNDL',
-                  onPressed: _openDownloads,
-                  icon: const Icon(Icons.folder_open_rounded),
-                ),
-                PopupMenuButton<_HistoryMenuAction>(
-                  tooltip: 'Library actions',
-                  onSelected: _handleMenuAction,
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(
-                      value: _HistoryMenuAction.clearCompleted,
-                      child: ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: Icon(Icons.playlist_remove_rounded),
-                        title: Text('Clear completed'),
-                      ),
+                if (_selectionMode) ...[
+                  IconButton(
+                    tooltip:
+                        _selectedIds.length == filtered.length &&
+                            filtered.isNotEmpty
+                        ? 'Clear selection'
+                        : 'Select all results',
+                    onPressed: filtered.isEmpty
+                        ? null
+                        : () => _selectAll(filtered),
+                    icon: Icon(
+                      _selectedIds.length == filtered.length &&
+                              filtered.isNotEmpty
+                          ? Icons.deselect_rounded
+                          : Icons.select_all_rounded,
                     ),
-                    PopupMenuItem(
-                      value: _HistoryMenuAction.clearAll,
-                      child: ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: Icon(Icons.delete_sweep_outlined),
-                        title: Text('Clear all history'),
+                  ),
+                  PopupMenuButton<_BulkAction>(
+                    tooltip: 'Actions for selected downloads',
+                    enabled: _selectedIds.isNotEmpty,
+                    onSelected: (action) => _handleBulkAction(action, all),
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(
+                        value: _BulkAction.retry,
+                        child: ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(Icons.refresh_rounded),
+                          title: Text('Retry eligible'),
+                        ),
                       ),
-                    ),
-                  ],
-                ),
+                      PopupMenuItem(
+                        value: _BulkAction.cancel,
+                        child: ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(Icons.stop_circle_outlined),
+                          title: Text('Cancel active'),
+                        ),
+                      ),
+                      PopupMenuDivider(),
+                      PopupMenuItem(
+                        value: _BulkAction.remove,
+                        child: ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(Icons.delete_outline_rounded),
+                          title: Text('Remove selected…'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  IconButton(
+                    tooltip: 'Finish selecting',
+                    onPressed: _exitSelectionMode,
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ] else ...[
+                  IconButton(
+                    tooltip: 'Select downloads',
+                    onPressed: () => setState(() => _selectionMode = true),
+                    icon: const Icon(Icons.checklist_rounded),
+                  ),
+                  IconButton(
+                    tooltip: 'Open Downloads/MBNDL',
+                    onPressed: _openDownloads,
+                    icon: const Icon(Icons.folder_open_rounded),
+                  ),
+                  PopupMenuButton<_HistoryMenuAction>(
+                    tooltip: 'Library actions',
+                    onSelected: _handleMenuAction,
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(
+                        value: _HistoryMenuAction.clearCompleted,
+                        child: ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(Icons.playlist_remove_rounded),
+                          title: Text('Clear completed'),
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: _HistoryMenuAction.clearAll,
+                        child: ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(Icons.delete_sweep_outlined),
+                          title: Text('Clear all history'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
                 const SizedBox(width: 8),
               ],
             ),
@@ -97,7 +166,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
               sliver: SliverToBoxAdapter(
                 child: Center(
                   child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 980),
+                    constraints: const BoxConstraints(maxWidth: 1320),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -163,7 +232,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                 sliver: SliverToBoxAdapter(
                   child: Center(
                     child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 980),
+                      constraints: const BoxConstraints(maxWidth: 1320),
                       child: _EmptyLibrary(
                         hasDownloads: all.isNotEmpty,
                         onReset: _resetFilters,
@@ -180,7 +249,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                   sliver: SliverToBoxAdapter(
                     child: Center(
                       child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 980),
+                        constraints: const BoxConstraints(maxWidth: 1320),
                         child: Row(
                           children: [
                             Expanded(
@@ -207,15 +276,50 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                 ),
                 SliverPadding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
-                  sliver: SliverList.separated(
-                    itemCount: group.value.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 10),
-                    itemBuilder: (context, index) => Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 980),
-                        child: _downloadCard(group.value[index]),
-                      ),
-                    ),
+                  sliver: SliverLayoutBuilder(
+                    builder: (context, constraints) {
+                      final twoColumns = constraints.crossAxisExtent >= 1180;
+                      final rowCount = twoColumns
+                          ? (group.value.length + 1) ~/ 2
+                          : group.value.length;
+                      return SliverList.separated(
+                        itemCount: rowCount,
+                        separatorBuilder: (_, _) => const SizedBox(height: 10),
+                        itemBuilder: (context, rowIndex) {
+                          final firstIndex = twoColumns
+                              ? rowIndex * 2
+                              : rowIndex;
+                          final secondIndex = firstIndex + 1;
+                          return Center(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 1320),
+                              child: twoColumns
+                                  ? Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Expanded(
+                                          child: _downloadCard(
+                                            group.value[firstIndex],
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child:
+                                              secondIndex < group.value.length
+                                              ? _downloadCard(
+                                                  group.value[secondIndex],
+                                                )
+                                              : const SizedBox.shrink(),
+                                        ),
+                                      ],
+                                    )
+                                  : _downloadCard(group.value[firstIndex]),
+                            ),
+                          );
+                        },
+                      );
+                    },
                   ),
                 ),
               ],
@@ -232,6 +336,11 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
         item.status == DownloadStatus.cancelled;
     return DownloadItemCard(
       item: item,
+      selectionMode: _selectionMode,
+      selected: item.id != null && _selectedIds.contains(item.id),
+      onSelectionChanged: item.id == null
+          ? null
+          : (_) => _toggleSelection(item),
       onCancel: _isActive(item) ? () => _cancel(item) : null,
       onRetry: retryable ? () => _retry(item) : null,
       onDelete: item.id == null ? null : () => _confirmDelete(item),
@@ -338,6 +447,136 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
       item.status == DownloadStatus.processing ||
       item.status == DownloadStatus.downloading;
 
+  void _toggleSelection(DownloadItem item) {
+    final id = item.id;
+    if (id == null) return;
+    setState(() {
+      _selectionMode = true;
+      if (!_selectedIds.add(id)) _selectedIds.remove(id);
+    });
+  }
+
+  void _selectAll(List<DownloadItem> visibleItems) {
+    final visibleIds = visibleItems
+        .map((item) => item.id)
+        .whereType<int>()
+        .toSet();
+    setState(() {
+      if (visibleIds.isNotEmpty && _selectedIds.containsAll(visibleIds)) {
+        _selectedIds.removeAll(visibleIds);
+      } else {
+        _selectedIds.addAll(visibleIds);
+      }
+    });
+  }
+
+  void _exitSelectionMode() {
+    setState(() {
+      _selectionMode = false;
+      _selectedIds.clear();
+    });
+  }
+
+  List<DownloadItem> _selectedItems(List<DownloadItem> all) => all
+      .where((item) => item.id != null && _selectedIds.contains(item.id))
+      .toList(growable: false);
+
+  Future<void> _handleBulkAction(
+    _BulkAction action,
+    List<DownloadItem> all,
+  ) async {
+    final selected = _selectedItems(all);
+    if (selected.isEmpty) return;
+    switch (action) {
+      case _BulkAction.retry:
+        final targets = selected
+            .where(
+              (item) =>
+                  item.status == DownloadStatus.failed ||
+                  item.status == DownloadStatus.cancelled,
+            )
+            .toList(growable: false);
+        var queued = 0;
+        for (final item in targets) {
+          if (await _retry(item, notify: false)) queued++;
+        }
+        _message(
+          queued == 0
+              ? 'No selected download can be retried.'
+              : '$queued download${queued == 1 ? '' : 's'} added to the queue.',
+        );
+        _exitSelectionMode();
+      case _BulkAction.cancel:
+        final targets = selected.where(_isActive).toList(growable: false);
+        var cancelled = 0;
+        for (final item in targets) {
+          if (await _cancel(item, notify: false)) cancelled++;
+        }
+        _message(
+          cancelled == 0
+              ? 'No selected download is active.'
+              : '$cancelled active download${cancelled == 1 ? '' : 's'} cancelled.',
+        );
+        _exitSelectionMode();
+      case _BulkAction.remove:
+        await _confirmBulkDelete(selected);
+    }
+  }
+
+  Future<void> _confirmBulkDelete(List<DownloadItem> items) async {
+    var deleteFiles = items.any(
+      (item) => item.filePath != null || item.publicUris.isNotEmpty,
+    );
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          icon: const Icon(Icons.delete_sweep_outlined),
+          title: Text('Remove ${items.length} downloads?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text('The selected entries will be removed from History.'),
+              const SizedBox(height: 12),
+              CheckboxListTile(
+                value: deleteFiles,
+                onChanged: (value) =>
+                    setDialogState(() => deleteFiles = value ?? false),
+                title: const Text('Delete files from the device'),
+                subtitle: const Text(
+                  'Includes media, covers, subtitles, and Android copies',
+                ),
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.pop(context, true),
+              icon: const Icon(Icons.delete_outline_rounded),
+              label: const Text('Remove selected'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true) return;
+    var removed = 0;
+    for (final item in items) {
+      if (await _delete(item, deleteFiles: deleteFiles, notify: false)) {
+        removed++;
+      }
+    }
+    _exitSelectionMode();
+    _message('$removed download${removed == 1 ? '' : 's'} removed.');
+  }
+
   void _resetFilters() {
     _searchController.clear();
     setState(() {
@@ -437,10 +676,14 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
     }
   }
 
-  Future<void> _retry(DownloadItem item) async {
+  Future<bool> _retry(DownloadItem item, {bool notify = true}) async {
     if (item.id == null || item.formatId == null) {
-      _message('This older item has no saved format. Inspect the link again.');
-      return;
+      if (notify) {
+        _message(
+          'This older item has no saved format. Inspect the link again.',
+        );
+      }
+      return false;
     }
     final base = ref.read(ytDlpSettingsProvider);
     final settings = base.copyWith(
@@ -454,19 +697,23 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
       await ref
           .read(downloadsProvider.notifier)
           .retryDownload(item: item, settings: settings);
-      _message('Download added to the queue.');
+      if (notify) _message('Download added to the queue.');
+      return true;
     } catch (error, stackTrace) {
       AppLogger.error('Retry could not be queued', error, stackTrace);
-      _message('The download could not be queued. Try again.');
+      if (notify) _message('The download could not be queued. Try again.');
+      return false;
     }
   }
 
-  Future<void> _cancel(DownloadItem item) async {
+  Future<bool> _cancel(DownloadItem item, {bool notify = true}) async {
     try {
       await ref.read(downloadsProvider.notifier).cancelDownload(item);
+      return true;
     } catch (error, stackTrace) {
       AppLogger.error('Download cancellation failed', error, stackTrace);
-      _message('The download could not be cancelled.');
+      if (notify) _message('The download could not be cancelled.');
+      return false;
     }
   }
 
@@ -513,8 +760,12 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
     if (confirmed == true) await _delete(item, deleteFiles: deleteFiles);
   }
 
-  Future<void> _delete(DownloadItem item, {required bool deleteFiles}) async {
-    if (item.id == null) return;
+  Future<bool> _delete(
+    DownloadItem item, {
+    required bool deleteFiles,
+    bool notify = true,
+  }) async {
+    if (item.id == null) return false;
     try {
       if (_isActive(item)) {
         await ref.read(downloadsProvider.notifier).cancelDownload(item);
@@ -535,9 +786,11 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
         );
       }
       await ref.read(downloadsProvider.notifier).deleteDownload(item.id!);
+      return true;
     } catch (error, stackTrace) {
       AppLogger.error('Could not remove download', error, stackTrace);
-      _message('Some files could not be removed.');
+      if (notify) _message('Some files could not be removed.');
+      return false;
     }
   }
 

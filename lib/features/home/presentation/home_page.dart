@@ -20,6 +20,7 @@ import '../../../shared/providers/recent_links_provider.dart';
 import '../../../shared/providers/settings_provider.dart';
 import '../../../shared/providers/youtube_auth_provider.dart';
 import '../../../shared/utils/media_url_classifier.dart';
+import '../../settings/widgets/quick_preset_selector.dart';
 import 'format_selection_page.dart';
 
 class HomePage extends ConsumerStatefulWidget {
@@ -396,13 +397,15 @@ class _HomePageState extends ConsumerState<HomePage> {
           SliverToBoxAdapter(
             child: Center(
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 1120),
+                constraints: const BoxConstraints(maxWidth: 1320),
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 40),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       _buildDownloadWorkspace(context),
+                      const SizedBox(height: 16),
+                      const QuickPresetSelector(showAdvancedButton: true),
                       const SizedBox(height: 16),
                       _buildQueueSnapshot(context),
                       const SizedBox(height: 28),
@@ -712,18 +715,34 @@ class _HomePageState extends ConsumerState<HomePage> {
                 ),
               )
             else
-              for (final link in filtered) ...[
-                _RecentLinkCard(
-                  link: link,
-                  onOpen: () => _openRecent(link),
-                  onDelete: link.id == null
-                      ? null
-                      : () => ref
-                            .read(recentLinksProvider.notifier)
-                            .deleteRecentLink(link.id!),
-                ),
-                const SizedBox(height: 10),
-              ],
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final twoColumns = constraints.maxWidth >= 960;
+                  const gap = 10.0;
+                  final width = twoColumns
+                      ? (constraints.maxWidth - gap) / 2
+                      : constraints.maxWidth;
+                  return Wrap(
+                    spacing: gap,
+                    runSpacing: gap,
+                    children: [
+                      for (final link in filtered)
+                        SizedBox(
+                          width: width,
+                          child: _RecentLinkCard(
+                            link: link,
+                            onOpen: () => _openRecent(link),
+                            onDelete: link.id == null
+                                ? null
+                                : () => ref
+                                      .read(recentLinksProvider.notifier)
+                                      .deleteRecentLink(link.id!),
+                          ),
+                        ),
+                    ],
+                  );
+                },
+              ),
           ],
         );
       },

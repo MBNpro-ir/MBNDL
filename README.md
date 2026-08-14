@@ -29,9 +29,9 @@ MBNDL lets you inspect a supported media link before downloading anything. You c
 4. Paste a link, select **Inspect formats**, choose one or more outputs, then select **Add to downloads**.
 5. Find completed files in `Downloads/MBNDL` or open them from **History**.
 
-✅ `yt-dlp`, `ffmpeg.exe`, and `ffprobe.exe` are included in the Windows release. The user never has to visit a setup/download page. Updates for yt-dlp and FFmpeg remain available inside **Settings → Tools**.
+✅ `yt-dlp`, `ffmpeg.exe`, and `ffprobe.exe` are included in the Windows release. The user never has to visit a setup/download page. Updates for yt-dlp and FFmpeg remain available inside **Settings → Download engines**.
 
-When closing MBNDL on Windows, choose **Minimize to tray**, **Exit**, or **Cancel**. A left-click on the tray icon restores and focuses the window; right-click exposes **Open** and **Close**.
+When closing MBNDL on Windows, choose **Minimize to tray**, **Exit**, or **Cancel**. Enable **Remember this selection** to reuse that choice; it can be changed later under **Settings → Appearance & behavior**. A left-click on the tray icon restores and focuses the window; right-click exposes **Open** and **Close**.
 
 > Windows may display a SmartScreen notice for community-built unsigned releases. Verify that the file came from this repository’s Releases page before running it.
 
@@ -48,6 +48,8 @@ When closing MBNDL on Windows, choose **Minimize to tray**, **Exit**, or **Cance
 MBNDL uses Android’s secure MediaStore API on Android 10 and newer. It does **not** request broad “all files” access. The first-run gate performs a real write/delete probe in `Downloads/MBNDL`, so a false permission state cannot hide an unusable folder. Android 9 and older request only the legacy storage permission required by those systems.
 
 ### 🎛️ Choosing formats
+
+Choose a connection preset directly on Home before inspecting the link. Detailed retry, network, captions, live-stream, and extractor controls remain one tap away in the yt-dlp Settings page.
 
 - **Ready to play** — formats that already contain video and audio.
 - **Video** — select one or several video-only streams.
@@ -77,7 +79,7 @@ On Android and Windows, MBNDL checks GitHub Releases after startup and can downl
 
 ### 🗂️ Downloads library and troubleshooting
 
-The Downloads library uses a mobile-first grouped list with clear **All**, **Active**, **Ready**, and **Attention** views. Search, date/media/artifact filters, sorting, retry, cancel, open, share, missing-file detection, and coordinated deletion are available without crowding every card. Tap an item for its source, codecs, cover, subtitles, related files, and full error details.
+The Downloads library uses a mobile-first grouped list with clear **All**, **Active**, **Ready**, and **Attention** views. Search, date/media/artifact filters, sorting, retry, cancel, open, share, missing-file detection, and coordinated deletion are available without crowding every card. Select one or several entries to retry, cancel, or remove them together. Tap an item for its source, codecs, cover, subtitles, related files, and full error details.
 
 If a download fails, MBNDL translates common yt-dlp/FFmpeg output into an actionable message—for example: authentication required, rate limited, unsupported URL, missing format, storage full, network failure, or FFmpeg merge failure.
 
@@ -99,7 +101,7 @@ MBNDL یک دانلود منیجر ساده و مدرن بر پایهٔ yt-dlp �
 
 فایل‌های `yt-dlp`، `ffmpeg` و `ffprobe` از قبل داخل نسخهٔ ویندوز قرار دارند؛ بنابراین در اجرای اول صفحهٔ دانلود ابزار نمایش داده نمی‌شود. با این حال آپدیت داخلی هر دو ابزار از Settings همچنان فعال است.
 
-هنگام بستن برنامه می‌توانید یکی از گزینه‌های **Minimize to tray**، **Exit** یا **Cancel** را انتخاب کنید. کلیک چپ روی آیکون Tray پنجره را به جلو می‌آورد و کلیک راست گزینه‌های Open و Close را نشان می‌دهد.
+هنگام بستن برنامه می‌توانید یکی از گزینه‌های **Minimize to tray**، **Exit** یا **Cancel** را انتخاب کنید. با فعال‌کردن **Remember this selection** همان رفتار برای دفعات بعد ذخیره می‌شود و از بخش **Settings → Appearance & behavior** قابل تغییر است. کلیک چپ روی آیکون Tray پنجره را به جلو می‌آورد و کلیک راست گزینه‌های Open و Close را نشان می‌دهد.
 
 ### 📱 استفاده در اندروید
 
@@ -125,6 +127,8 @@ MBNDL یک دانلود منیجر ساده و مدرن بر پایهٔ yt-dlp �
 - در تب‌های **Video** و **Audio** می‌توانید چند گزینه را هم‌زمان انتخاب کنید.
 - برای ساخت یک فایل نهایی از یک ویدئو و یک صدا، گزینهٔ **Smart merge** را فعال کنید.
 - صفحهٔ Downloads دارای نمای ساده و گروه‌بندی‌شده، جست‌وجو، فیلتر تاریخ/وضعیت/نوع فایل، مرتب‌سازی، Retry، Cancel، Share، تشخیص فایل حذف‌شده و نمایش کاور و زیرنویس است.
+- با حالت انتخاب چندتایی می‌توانید چند دانلود را با هم Retry، Cancel یا همراه فایل‌های وابسته حذف کنید.
+- Quick Presets پیش از دانلود مستقیماً در Home در دسترس است و دکمهٔ تنظیمات ریز yt-dlp نیز کنار آن قرار دارد.
 - خطاهای رایج yt-dlp و FFmpeg با متن قابل‌فهم و راه‌حل پیشنهادی نمایش داده می‌شوند.
 
 کیفیت‌هایی که فایلشان از قبل در پوشه‌های مدیریت‌شده وجود دارد با رنگ سبز مشخص می‌شوند. انتخاب دوبارهٔ آن‌ها پس از هشدار مجاز است و برنامه به‌جای overwrite، فایل جدید را با نام `(copy N)` ذخیره می‌کند. لینک Playlist نیز به‌صورت خودکار تشخیص داده می‌شود و تنظیم دستی جداگانه‌ای ندارد.
@@ -175,6 +179,7 @@ Windows-only tools are installed by CMake under `data/tools`; they are not added
 - The packaged FFmpeg archive contains only `ffmpeg.exe`, `ffprobe.exe`, and upstream notices.
 - The FFmpeg updater reads the remote ZIP directory and uses HTTP Range requests to fetch only those two executables instead of downloading the complete distribution.
 - yt-dlp updates support stable, nightly, and master channels and verify the upstream digest when one is supplied.
+- Windows account secrets use the upstream Dart FFI/DPAPI implementation. MBNDL keeps a Dart-only copy under `third_party/` so the obsolete ATL migration plugin is not compiled and CI does not require Visual Studio's optional ATL workload.
 
 ### Application updater and signing
 

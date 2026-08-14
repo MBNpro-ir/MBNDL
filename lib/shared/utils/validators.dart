@@ -103,19 +103,20 @@ class Validators {
     return null;
   }
 
-  /// Validate language codes (e.g., en,fa,ar)
+  /// Validate yt-dlp subtitle language expressions (e.g. en.*,fa,-live_chat).
   static String? validateLanguageCodes(String? value) {
     if (value == null || value.isEmpty) {
       return null; // Allow empty
     }
 
     final langPattern = RegExp(
-      r'^[a-z]{2,3}(,[a-z]{2,3})*$',
+      r'^-?(all|[a-z0-9_@.*-]+)$',
       caseSensitive: false,
     );
+    final languages = value.split(',').map((item) => item.trim()).toList();
 
-    if (!langPattern.hasMatch(value)) {
-      return 'Format: comma-separated language codes (e.g., en,fa,ar)';
+    if (languages.any((item) => item.isEmpty || !langPattern.hasMatch(item))) {
+      return 'Use yt-dlp language expressions, e.g. en.*,fa,-live_chat';
     }
 
     return null;

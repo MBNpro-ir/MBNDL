@@ -5,7 +5,6 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path_provider/path_provider.dart';
@@ -19,6 +18,7 @@ import '../../../core/theme/app_theme_mode.dart';
 import '../../../shared/providers/settings_provider.dart';
 import '../../../shared/providers/cookie_provider.dart';
 import '../../../shared/models/delete_preference.dart';
+import '../../../shared/models/windows_close_behavior.dart';
 import '../../../services/logger/app_logger.dart';
 import '../../../services/storage/settings_storage_service.dart';
 import '../../../services/storage/presets_storage_service.dart';
@@ -45,58 +45,299 @@ class SettingsPage extends ConsumerWidget {
     final themeColor = ref.watch(themeColorProvider);
     final logLevel = ref.watch(logLevelProvider);
     final deletePreference = ref.watch(deletePreferenceProvider);
+    final closeBehavior = ref.watch(windowsCloseBehaviorProvider);
     final youtubeAccount = ref.watch(cookieProvider).selectedCookie;
+    final colors = Theme.of(context).colorScheme;
+
+    Widget sectionColumn(List<Widget> sections) => Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var index = 0; index < sections.length; index++) ...[
+          if (index > 0) const SizedBox(height: 16),
+          sections[index],
+        ],
+      ],
+    );
+
+    final downloadsSection = SettingsSection(
+      title: 'Downloads & accounts',
+      icon: Icons.download_for_offline_outlined,
+      children: [
+        ListTile(
+          leading: const Icon(Icons.folder_outlined),
+          title: const Text('Download folder'),
+          subtitle: const Text('Choose and verify where completed files go'),
+          trailing: const Icon(Icons.chevron_right_rounded),
+          onTap: () =>
+              _navigateToSubPage(context, const DownloadPathSettings()),
+        ),
+        ListTile(
+          leading: const Icon(Icons.tune_rounded),
+          title: const Text('Quick presets & yt-dlp'),
+          subtitle: const Text(
+            'Connection, retries, captions, and advanced controls',
+          ),
+          trailing: const Icon(Icons.chevron_right_rounded),
+          onTap: () => context.push('/ytdlp-settings'),
+        ),
+        ListTile(
+          leading: const Icon(Icons.account_circle_outlined),
+          title: const Text('YouTube accounts'),
+          subtitle: Text(
+            youtubeAccount == null
+                ? 'Anonymous mode · safest default'
+                : '${youtubeAccount.name} is active',
+          ),
+          trailing: const Icon(Icons.chevron_right_rounded),
+          onTap: () => _navigateToSubPage(context, const CookieManagerPage()),
+        ),
+        ListTile(
+          leading: const Icon(Icons.delete_outline_rounded),
+          title: const Text('Delete behavior'),
+          subtitle: Text(deletePreference.displayName),
+          onTap: () =>
+              _showDeletePreferenceDialog(context, ref, deletePreference),
+        ),
+      ],
+    );
+
+    final appearanceSection = SettingsSection(
+      title: 'Appearance & behavior',
+      icon: Icons.auto_awesome_outlined,
+      children: [
+        ListTile(
+          leading: Icon(themeMode.icon),
+          title: const Text('Theme mode'),
+          subtitle: Text(themeMode.displayName),
+          onTap: () => _showThemeDialog(context, ref, themeMode),
+        ),
+        ListTile(
+          leading: Icon(
+            Icons.palette_outlined,
+            color: _getThemeColorPreview(themeColor),
+          ),
+          title: const Text('Theme color'),
+          subtitle: Text(AppTheme.getThemeColorName(themeColor)),
+          onTap: () => _showThemeColorDialog(context, ref, themeColor),
+        ),
+        if (Platform.isWindows)
+          ListTile(
+            leading: const Icon(Icons.close_fullscreen_rounded),
+            title: const Text('When closing the window'),
+            subtitle: Text(closeBehavior.displayName),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () =>
+                _showWindowsCloseBehaviorDialog(context, ref, closeBehavior),
+          ),
+      ],
+    );
+
+    final updatesSection = const SettingsSection(
+      title: 'App updates',
+      icon: Icons.system_update_alt_rounded,
+      children: [AppUpdateSettings()],
+    );
+
+    final diagnosticsSection = SettingsSection(
+      title: 'Diagnostics',
+      icon: Icons.monitor_heart_outlined,
+      children: [
+        ListTile(
+          leading: const Icon(Icons.description_outlined),
+          title: const Text('Application logs'),
+          subtitle: const Text('Search errors, warnings, and download details'),
+          trailing: const Icon(Icons.chevron_right_rounded),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const LogsViewerPage()),
+          ),
+        ),
+        ListTile(
+          leading: const Icon(Icons.bug_report_outlined),
+          title: const Text('Log detail'),
+          subtitle: Text(_getLogLevelLabel(logLevel)),
+          onTap: () => _showLogLevelDialog(context, ref, logLevel),
+        ),
+        if (!Platform.isAndroid)
+          ListTile(
+            leading: const Icon(Icons.folder_open_outlined),
+            title: const Text('Open log folder'),
+            subtitle: const Text('View diagnostic files in Explorer'),
+            trailing: const Icon(Icons.open_in_new_rounded),
+            onTap: () => _openLogFolder(context),
+          ),
+        if (!Platform.isAndroid)
+          ListTile(
+            leading: const Icon(Icons.data_object_rounded),
+            title: const Text('Settings file'),
+            subtitle: Text(
+              SettingsStorageService.instance.getSettingsFilePath() ??
+                  'Not initialized',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            trailing: IconButton(
+              icon: const Icon(Icons.copy_rounded),
+              tooltip: 'Copy path',
+              onPressed: () => _copySettingsPath(context),
+            ),
+            onTap: () => _openSettingsFolder(context),
+          ),
+      ],
+    );
+
+    final backupSection = SettingsSection(
+      title: 'Backup & data',
+      icon: Icons.cloud_sync_outlined,
+      children: [
+        ListTile(
+          leading: const Icon(Icons.save_alt_outlined),
+          title: const Text('Backup presets'),
+          subtitle: const Text('Save custom presets to a file'),
+          trailing: const Icon(Icons.chevron_right_rounded),
+          onTap: () => _backupPresets(context),
+        ),
+        ListTile(
+          leading: const Icon(Icons.restore_outlined),
+          title: const Text('Restore presets'),
+          subtitle: const Text('Restore custom presets from a backup'),
+          trailing: const Icon(Icons.chevron_right_rounded),
+          onTap: () => _restorePresets(context),
+        ),
+        const Divider(height: 1),
+        ListTile(
+          leading: const Icon(Icons.file_download_outlined),
+          title: const Text('Export settings'),
+          subtitle: const Text('Save all app settings to a file'),
+          onTap: () => _exportSettings(context),
+        ),
+        ListTile(
+          leading: const Icon(Icons.upload_outlined),
+          title: const Text('Import settings'),
+          subtitle: const Text('Restore app settings from a file'),
+          onTap: () => _importSettings(context),
+        ),
+        ListTile(
+          leading: const Icon(Icons.description_outlined),
+          title: const Text('Export logs'),
+          subtitle: const Text('Save application logs to a file'),
+          onTap: () => _exportLogs(context),
+        ),
+        if (!Platform.isAndroid)
+          ListTile(
+            leading: const Icon(Icons.folder_outlined),
+            title: const Text('Open config folder'),
+            subtitle: const Text('View MBNDL configuration files'),
+            trailing: const Icon(Icons.open_in_new_rounded),
+            onTap: () => _openConfigFolder(context),
+          ),
+      ],
+    );
+
+    final aboutSection = SettingsSection(
+      title: 'About & support',
+      icon: Icons.info_outline_rounded,
+      children: [
+        FutureBuilder<PackageInfo>(
+          future: PackageInfo.fromPlatform(),
+          builder: (context, snapshot) => ListTile(
+            leading: const Icon(Icons.app_settings_alt_outlined),
+            title: const Text('Version'),
+            subtitle: Text(
+              snapshot.hasData
+                  ? '${snapshot.data!.version} (${snapshot.data!.buildNumber})'
+                  : 'Loading…',
+            ),
+          ),
+        ),
+        ListTile(
+          leading: const Icon(Icons.code_outlined),
+          title: const Text('Open source'),
+          subtitle: const Text('Source code, documentation, and issue tracker'),
+          trailing: const Icon(Icons.open_in_new_rounded),
+          onTap: () => _openGitHub(context),
+        ),
+        ListTile(
+          leading: Icon(Icons.restart_alt_rounded, color: colors.error),
+          title: Text('Reset app', style: TextStyle(color: colors.error)),
+          subtitle: const Text('Clear all local app data and start over'),
+          trailing: Icon(Icons.chevron_right_rounded, color: colors.error),
+          onTap: () => _showResetAppDialog(context, ref),
+        ),
+      ],
+    );
+
+    final engineSections = <Widget>[
+      SettingsSection(
+        key: const ValueKey('ytdlp_settings_section'),
+        title: 'yt-dlp engine',
+        icon: Icons.dynamic_feed_outlined,
+        children: const [YtDlpSettings(key: ValueKey('ytdlp_settings_widget'))],
+      ),
+      SettingsSection(
+        key: const ValueKey('ffmpeg_settings_section'),
+        title: 'FFmpeg',
+        icon: Icons.video_settings_outlined,
+        children: const [
+          FFmpegSettings(key: ValueKey('ffmpeg_settings_widget')),
+        ],
+      ),
+    ];
 
     return Scaffold(
-      appBar: AppBar(toolbarHeight: 76, title: const Text('Settings')),
+      appBar: AppBar(toolbarHeight: 68, title: const Text('Settings')),
       body: LayoutBuilder(
         builder: (context, constraints) {
-          final isLargeScreen = constraints.maxWidth > 600;
+          final wide = constraints.maxWidth >= 980;
+          final pagePadding = constraints.maxWidth >= 720 ? 24.0 : 12.0;
+          final primaryColumn = sectionColumn([
+            downloadsSection,
+            updatesSection,
+          ]);
+          final secondaryColumn = sectionColumn([
+            appearanceSection,
+            diagnosticsSection,
+          ]);
 
           return Center(
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 980),
+              constraints: const BoxConstraints(maxWidth: 1380),
               child: ListView(
-                padding: EdgeInsets.symmetric(
-                  horizontal: isLargeScreen ? 28 : 16,
-                  vertical: 16,
-                ),
+                padding: EdgeInsets.fromLTRB(pagePadding, 12, pagePadding, 32),
                 children: [
                   Card(
-                    color: Theme.of(context).colorScheme.primaryContainer,
+                    color: colors.primaryContainer,
                     child: Padding(
-                      padding: const EdgeInsets.all(24),
+                      padding: EdgeInsets.all(wide ? 20 : 16),
                       child: Row(
                         children: [
-                          Icon(
-                            Icons.tune_rounded,
-                            size: 42,
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onPrimaryContainer,
+                          Container(
+                            width: 48,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: colors.primary,
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Icon(
+                              Icons.tune_rounded,
+                              color: colors.onPrimary,
+                            ),
                           ),
-                          const SizedBox(width: 18),
+                          const SizedBox(width: 16),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'Make MBNDL yours',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .headlineSmall
+                                  'Download your way',
+                                  style: Theme.of(context).textTheme.titleLarge
                                       ?.copyWith(fontWeight: FontWeight.w800),
                                 ),
-                                const SizedBox(height: 6),
+                                const SizedBox(height: 3),
                                 Text(
-                                  'Appearance, download engine, storage, '
-                                  'presets, diagnostics, and backups.',
-                                  style: Theme.of(context).textTheme.bodyMedium
-                                      ?.copyWith(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.onPrimaryContainer,
-                                      ),
+                                  'Core choices first; tools, diagnostics, and '
+                                  'backups stay close when you need them.',
+                                  style: Theme.of(context).textTheme.bodyMedium,
                                 ),
                               ],
                             ),
@@ -105,404 +346,56 @@ class SettingsPage extends ConsumerWidget {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 24),
-                  // App Settings Section
-                  SettingsSection(
-                        title: 'App Settings',
-                        icon: Icons.settings_outlined,
-                        children: [
-                          ListTile(
-                            leading: Icon(
-                              themeMode.icon,
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                            title: const Text('Theme Mode'),
-                            subtitle: Text(themeMode.displayName),
-                            onTap: () =>
-                                _showThemeDialog(context, ref, themeMode),
-                          ),
-                          ListTile(
-                            leading: Icon(
-                              Icons.palette_outlined,
-                              color: _getThemeColorPreview(themeColor),
-                            ),
-                            title: const Text('Theme Color'),
-                            subtitle: Text(
-                              AppTheme.getThemeColorName(themeColor),
-                            ),
-                            onTap: () =>
-                                _showThemeColorDialog(context, ref, themeColor),
-                          ),
-                          ListTile(
-                            leading: Icon(
-                              Icons.bug_report_outlined,
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                            title: const Text('Log Level'),
-                            subtitle: Text(_getLogLevelLabel(logLevel)),
-                            onTap: () =>
-                                _showLogLevelDialog(context, ref, logLevel),
-                          ),
-                          ListTile(
-                            leading: Icon(
-                              Icons.delete_outline,
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                            title: const Text('Delete Behavior'),
-                            subtitle: Text(deletePreference.displayName),
-                            onTap: () => _showDeletePreferenceDialog(
-                              context,
-                              ref,
-                              deletePreference,
-                            ),
-                          ),
-                          ListTile(
-                            leading: Icon(
-                              Icons.description_outlined,
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                            title: const Text('View Logs'),
-                            subtitle: const Text('View application logs'),
-                            trailing: Icon(
-                              Icons.chevron_right,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurfaceVariant,
-                            ),
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => const LogsViewerPage(),
-                              ),
-                            ),
-                          ),
-                          if (!Platform.isAndroid)
-                            ListTile(
-                              leading: Icon(
-                                Icons.folder_open_outlined,
-                                color: Theme.of(context).colorScheme.primary,
-                              ),
-                              title: const Text('Open Log Folder'),
-                              subtitle: const Text(
-                                'Open logs folder in explorer',
-                              ),
-                              trailing: Icon(
-                                Icons.chevron_right,
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurfaceVariant,
-                              ),
-                              onTap: () => _openLogFolder(context),
-                            ),
-                          if (!Platform.isAndroid)
-                            ListTile(
-                              leading: Icon(
-                                Icons.file_copy_outlined,
-                                color: Theme.of(context).colorScheme.primary,
-                              ),
-                              title: const Text('Settings File Location'),
-                              subtitle: Text(
-                                SettingsStorageService.instance
-                                        .getSettingsFilePath() ??
-                                    'Not initialized',
-                                style: const TextStyle(fontSize: 11),
-                              ),
-                              trailing: IconButton(
-                                icon: Icon(
-                                  Icons.copy,
-                                  color: Theme.of(context).colorScheme.primary,
-                                ),
-                                tooltip: 'Copy path',
-                                onPressed: () => _copySettingsPath(context),
-                              ),
-                              onTap: () => _openSettingsFolder(context),
-                            ),
-                        ],
-                      )
-                      .animate()
-                      .fadeIn(duration: 300.ms)
-                      .slideY(begin: -0.1, end: 0, duration: 300.ms),
-
-                  const SizedBox(height: 24),
-
-                  SettingsSection(
-                        title: 'App Updates',
-                        icon: Icons.system_update_alt_rounded,
-                        children: const [AppUpdateSettings()],
-                      )
-                      .animate()
-                      .fadeIn(delay: 80.ms, duration: 300.ms)
-                      .slideY(
-                        begin: -0.1,
-                        end: 0,
-                        delay: 80.ms,
-                        duration: 300.ms,
-                      ),
-
-                  const SizedBox(height: 24),
-
-                  // Download Settings Section
-                  SettingsSection(
-                        title: 'Download Settings',
-                        icon: Icons.download_rounded,
-                        children: [
-                          ListTile(
-                            leading: Icon(
-                              Icons.folder_outlined,
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                            title: const Text('Download Folder'),
-                            subtitle: const Text(
-                              'Choose where downloads are saved',
-                            ),
-                            trailing: Icon(
-                              Icons.chevron_right,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurfaceVariant,
-                            ),
-                            onTap: () => _navigateToSubPage(
-                              context,
-                              const DownloadPathSettings(),
-                            ),
-                          ),
-                          ListTile(
-                            leading: Icon(
-                              Icons.settings_suggest_outlined,
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                            title: const Text('yt-dlp Settings'),
-                            subtitle: const Text(
-                              'Comprehensive yt-dlp flag configuration',
-                            ),
-                            trailing: Icon(
-                              Icons.chevron_right,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurfaceVariant,
-                            ),
-                            onTap: () => context.push('/ytdlp-settings'),
-                          ),
-                          ListTile(
-                            leading: Icon(
-                              Icons.account_circle_outlined,
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                            title: const Text('YouTube Accounts'),
-                            subtitle: Text(
-                              youtubeAccount == null
-                                  ? 'Anonymous mode · safest default'
-                                  : '${youtubeAccount.name} is active',
-                            ),
-                            trailing: Icon(
-                              Icons.chevron_right,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurfaceVariant,
-                            ),
-                            onTap: () => _navigateToSubPage(
-                              context,
-                              const CookieManagerPage(),
-                            ),
-                          ),
-                        ],
-                      )
-                      .animate()
-                      .fadeIn(delay: 100.ms, duration: 300.ms)
-                      .slideY(
-                        begin: -0.1,
-                        end: 0,
-                        delay: 100.ms,
-                        duration: 300.ms,
-                      ),
-
-                  // yt-dlp & FFmpeg - Desktop Only
+                  const SizedBox(height: 16),
+                  if (wide)
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(child: primaryColumn),
+                        const SizedBox(width: 16),
+                        Expanded(child: secondaryColumn),
+                      ],
+                    )
+                  else
+                    sectionColumn([
+                      downloadsSection,
+                      appearanceSection,
+                      updatesSection,
+                      diagnosticsSection,
+                    ]),
                   if (!Platform.isAndroid && !Platform.isIOS) ...[
-                    const SizedBox(height: 24),
-                    // yt-dlp Section
-                    SettingsSection(
-                          key: const ValueKey('ytdlp_settings_section'),
-                          title: 'yt-dlp Engine',
-                          icon: Icons.dynamic_feed_outlined,
-                          children: const [
-                            YtDlpSettings(
-                              key: ValueKey('ytdlp_settings_widget'),
-                            ),
-                          ],
-                        )
-                        .animate(key: const ValueKey('ytdlp_animation'))
-                        .fadeIn(delay: 150.ms, duration: 300.ms)
-                        .slideY(
-                          begin: -0.1,
-                          end: 0,
-                          delay: 150.ms,
-                          duration: 300.ms,
-                        ),
-                    const SizedBox(height: 24),
-                    // FFmpeg Section
-                    SettingsSection(
-                          key: const ValueKey('ffmpeg_settings_section'),
-                          title: 'FFmpeg',
-                          icon: Icons.video_settings_outlined,
-                          children: const [
-                            FFmpegSettings(
-                              key: ValueKey('ffmpeg_settings_widget'),
-                            ),
-                          ],
-                        )
-                        .animate(key: const ValueKey('ffmpeg_animation'))
-                        .fadeIn(delay: 200.ms, duration: 300.ms)
-                        .slideY(
-                          begin: -0.1,
-                          end: 0,
-                          delay: 200.ms,
-                          duration: 300.ms,
-                        ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Download engines',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    if (wide)
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(child: engineSections[0]),
+                          const SizedBox(width: 16),
+                          Expanded(child: engineSections[1]),
+                        ],
+                      )
+                    else
+                      sectionColumn(engineSections),
                   ],
-
-                  const SizedBox(height: 24),
-
-                  // Backup & Export Section
-                  SettingsSection(
-                        title: 'Backup & Export',
-                        icon: Icons.backup_outlined,
-                        children: [
-                          ListTile(
-                            leading: const Icon(Icons.save_alt_outlined),
-                            title: const Text('Backup Presets'),
-                            subtitle: const Text(
-                              'Backup custom presets to file',
-                            ),
-                            trailing: const Icon(Icons.chevron_right),
-                            onTap: () => _backupPresets(context),
-                          ),
-                          ListTile(
-                            leading: const Icon(Icons.restore_outlined),
-                            title: const Text('Restore Presets'),
-                            subtitle: const Text('Restore presets from backup'),
-                            trailing: const Icon(Icons.chevron_right),
-                            onTap: () => _restorePresets(context),
-                          ),
-                          const Divider(height: 1),
-                          ListTile(
-                            leading: const Icon(Icons.file_download_outlined),
-                            title: const Text('Export Settings'),
-                            subtitle: const Text('Save all settings to file'),
-                            trailing: const Icon(Icons.chevron_right),
-                            onTap: () => _exportSettings(context),
-                          ),
-                          ListTile(
-                            leading: const Icon(Icons.description_outlined),
-                            title: const Text('Export Logs'),
-                            subtitle: const Text('Save app logs to file'),
-                            trailing: const Icon(Icons.chevron_right),
-                            onTap: () => _exportLogs(context),
-                          ),
-                          ListTile(
-                            leading: const Icon(Icons.upload_outlined),
-                            title: const Text('Import Settings'),
-                            subtitle: const Text('Restore settings from file'),
-                            trailing: const Icon(Icons.chevron_right),
-                            onTap: () => _importSettings(context),
-                          ),
-                          if (!Platform.isAndroid)
-                            ListTile(
-                              leading: const Icon(Icons.folder_outlined),
-                              title: const Text('Open Config Folder'),
-                              subtitle: const Text('View MBNDL folder'),
-                              trailing: const Icon(Icons.chevron_right),
-                              onTap: () => _openConfigFolder(context),
-                            ),
-                        ],
-                      )
-                      .animate()
-                      .fadeIn(delay: 250.ms, duration: 300.ms)
-                      .slideY(
-                        begin: -0.1,
-                        end: 0,
-                        delay: 250.ms,
-                        duration: 300.ms,
-                      ),
-
-                  const SizedBox(height: 24),
-
-                  // About Section
-                  SettingsSection(
-                        title: 'About',
-                        icon: Icons.info_outlined,
-                        children: [
-                          FutureBuilder<PackageInfo>(
-                            future: PackageInfo.fromPlatform(),
-                            builder: (context, snapshot) => ListTile(
-                              leading: const Icon(
-                                Icons.app_settings_alt_outlined,
-                              ),
-                              title: const Text('Version'),
-                              subtitle: Text(
-                                snapshot.hasData
-                                    ? '${snapshot.data!.version} '
-                                          '(${snapshot.data!.buildNumber})'
-                                    : 'Loading…',
-                              ),
-                            ),
-                          ),
-                          ListTile(
-                            leading: const Icon(Icons.code_outlined),
-                            title: const Text('Open Source'),
-                            subtitle: const Text('Built with Flutter & yt-dlp'),
-                            trailing: const Icon(Icons.chevron_right),
-                            onTap: () => _openGitHub(context),
-                          ),
-                        ],
-                      )
-                      .animate()
-                      .fadeIn(delay: 200.ms, duration: 300.ms)
-                      .slideY(
-                        begin: -0.1,
-                        end: 0,
-                        delay: 200.ms,
-                        duration: 300.ms,
-                      ),
-
-                  const SizedBox(height: 24),
-
-                  // Reset App Section
-                  SettingsSection(
-                        title: 'Danger Zone',
-                        icon: Icons.warning_amber_rounded,
-                        children: [
-                          ListTile(
-                            leading: Icon(
-                              Icons.restart_alt,
-                              color: Theme.of(context).colorScheme.error,
-                            ),
-                            title: Text(
-                              'Reset App',
-                              style: TextStyle(
-                                color: Theme.of(context).colorScheme.error,
-                              ),
-                            ),
-                            subtitle: const Text(
-                              'Clear all app data and restart',
-                            ),
-                            trailing: Icon(
-                              Icons.chevron_right,
-                              color: Theme.of(context).colorScheme.error,
-                            ),
-                            onTap: () => _showResetAppDialog(context, ref),
-                          ),
-                        ],
-                      )
-                      .animate()
-                      .fadeIn(delay: 250.ms, duration: 300.ms)
-                      .slideY(
-                        begin: -0.1,
-                        end: 0,
-                        delay: 250.ms,
-                        duration: 300.ms,
-                      ),
-
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 16),
+                  if (wide)
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(child: backupSection),
+                        const SizedBox(width: 16),
+                        Expanded(child: aboutSection),
+                      ],
+                    )
+                  else
+                    sectionColumn([backupSection, aboutSection]),
                 ],
               ),
             ),
@@ -841,6 +734,49 @@ class SettingsPage extends ConsumerWidget {
               );
             }),
           ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showWindowsCloseBehaviorDialog(
+    BuildContext context,
+    WidgetRef ref,
+    WindowsCloseBehavior currentBehavior,
+  ) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        icon: const Icon(Icons.close_fullscreen_rounded),
+        title: const Text('When closing the window'),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final behavior in WindowsCloseBehavior.values)
+                RadioListTile<WindowsCloseBehavior>(
+                  value: behavior,
+                  groupValue: currentBehavior,
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(behavior.displayName),
+                  subtitle: Text(behavior.description),
+                  onChanged: (value) async {
+                    if (value == null) return;
+                    await ref
+                        .read(windowsCloseBehaviorProvider.notifier)
+                        .setBehavior(value);
+                    if (context.mounted) Navigator.pop(context);
+                  },
+                ),
+            ],
+          ),
         ),
         actions: [
           TextButton(

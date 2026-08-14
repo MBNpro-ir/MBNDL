@@ -8,6 +8,7 @@ import '../../../services/storage/presets_storage_service.dart';
 import '../../../services/downloader/android_ytdlp_service.dart';
 import '../domain/yt_dlp_settings.dart';
 import '../domain/custom_preset.dart';
+import '../widgets/quick_preset_selector.dart';
 
 class YtDlpSettingsPage extends ConsumerStatefulWidget {
   const YtDlpSettingsPage({super.key});
@@ -72,7 +73,7 @@ class _YtDlpSettingsPageState extends ConsumerState<YtDlpSettingsPage>
       ),
       body: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1040),
+          constraints: const BoxConstraints(maxWidth: 1280),
           child: TabBarView(
             controller: _tabController,
             children: [
@@ -91,67 +92,13 @@ class _YtDlpSettingsPageState extends ConsumerState<YtDlpSettingsPage>
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Quick Presets',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Tune only network and retry behavior. Format, playlist, '
-                  'file naming, covers, and merging stay automatic.',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-                const SizedBox(height: 16),
-                _PresetButton(
-                  title: 'Balanced',
-                  description: '4 fragments · 10 retries · recommended default',
-                  icon: Icons.balance_rounded,
-                  isSelected: settings.preset == 'default',
-                  onTap: () => _applyPreset('default'),
-                ),
-                const SizedBox(height: 12),
-                _PresetButton(
-                  title: 'Fast Download',
-                  description: '8 concurrent fragments for a strong connection',
-                  icon: Icons.speed,
-                  isSelected: settings.preset == 'speed',
-                  onTap: () => _applyPreset('speed'),
-                ),
-                const SizedBox(height: 12),
-                _PresetButton(
-                  title: 'Unstable Connection',
-                  description:
-                      'Single stream · longer timeout · exponential retry',
-                  icon: Icons.network_check_rounded,
-                  isSelected: settings.preset == 'resilient',
-                  onTap: () => _applyPreset('resilient'),
-                ),
-                const SizedBox(height: 12),
-                _PresetButton(
-                  title: 'Gentle YouTube',
-                  description:
-                      '5–10 second pauses and fewer simultaneous requests',
-                  icon: Icons.health_and_safety_outlined,
-                  isSelected: settings.preset == 'gentle_youtube',
-                  onTap: () => _applyPreset('gentle_youtube'),
-                ),
-                const SizedBox(height: 12),
-                _PresetButton(
-                  title: 'Limited Bandwidth',
-                  description: 'Single stream capped at 2 MiB/s',
-                  icon: Icons.data_saver_on_rounded,
-                  isSelected: settings.preset == 'limited_bandwidth',
-                  onTap: () => _applyPreset('limited_bandwidth'),
-                ),
-              ],
-            ),
-          ),
+        QuickPresetSelector(
+          onPresetApplied: () {
+            setState(() {
+              _hasUnsavedChanges = false;
+              _originalSettings = null;
+            });
+          },
         ),
         const SizedBox(height: 16),
         FutureBuilder<List<CustomPreset>>(
@@ -160,9 +107,7 @@ class _YtDlpSettingsPageState extends ConsumerState<YtDlpSettingsPage>
           ),
           builder: (context, snapshot) {
             final customPresets = snapshot.data ?? [];
-            if (customPresets.isEmpty) {
-              return const SizedBox.shrink();
-            }
+            if (customPresets.isEmpty) return const SizedBox.shrink();
 
             return Card(
               child: Padding(
@@ -171,32 +116,37 @@ class _YtDlpSettingsPageState extends ConsumerState<YtDlpSettingsPage>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Custom Presets',
+                      'Custom presets',
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
-                    const SizedBox(height: 16),
-                    ...customPresets.map(
-                      (preset) => Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: _PresetButton(
-                          title: preset.name,
-                          description: 'Custom configuration',
-                          icon: Icons.star,
-                          isSelected: settings.preset == preset.id,
-                          onTap: () {
-                            ref
-                                .read(ytDlpSettingsProvider.notifier)
-                                .applyTransportPreset(
-                                  name: preset.id,
-                                  preset: preset.settings,
-                                );
-                            setState(() {
-                              _hasUnsavedChanges = false;
-                              _originalSettings = null;
-                            });
-                          },
-                        ),
-                      ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: [
+                        for (final preset in customPresets)
+                          SizedBox(
+                            width: 340,
+                            child: _PresetButton(
+                              title: preset.name,
+                              description: 'Your saved transport configuration',
+                              icon: Icons.star_rounded,
+                              isSelected: settings.preset == preset.id,
+                              onTap: () {
+                                ref
+                                    .read(ytDlpSettingsProvider.notifier)
+                                    .applyTransportPreset(
+                                      name: preset.id,
+                                      preset: preset.settings,
+                                    );
+                                setState(() {
+                                  _hasUnsavedChanges = false;
+                                  _originalSettings = null;
+                                });
+                              },
+                            ),
+                          ),
+                      ],
                     ),
                   ],
                 ),
@@ -214,8 +164,9 @@ class _YtDlpSettingsPageState extends ConsumerState<YtDlpSettingsPage>
                 SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    'Gentle YouTube reduces request frequency but cannot '
-                    'prevent rate limits or account restrictions.',
+                    'Presets tune connection and retry behavior only. Gentle '
+                    'YouTube reduces request frequency, but it cannot prevent '
+                    'rate limits or account restrictions.',
                   ),
                 ),
               ],
@@ -226,276 +177,325 @@ class _YtDlpSettingsPageState extends ConsumerState<YtDlpSettingsPage>
     );
   }
 
-  void _applyPreset(String presetName) {
-    ref.read(ytDlpSettingsProvider.notifier).loadPreset(presetName);
-    setState(() {
-      _hasUnsavedChanges = false;
-      _originalSettings = null;
-    });
-  }
-
   Widget _buildDownloadTab(YtDlpSettings settings) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _buildSectionCard('Performance', [
-          _buildSliderTile(
-            'Concurrent Fragments',
-            settings.concurrentFragments.toDouble(),
-            1,
-            16,
-            (value) => _updateSettings(
-              settings.copyWith(concurrentFragments: value.toInt()),
-            ),
+    return _buildResponsiveTab([
+      _buildSectionCard('Performance', [
+        _buildSliderTile(
+          'Concurrent Fragments',
+          settings.concurrentFragments.toDouble(),
+          1,
+          16,
+          (value) => _updateSettings(
+            settings.copyWith(concurrentFragments: value.toInt()),
           ),
-          _buildSliderTile(
-            'Retries',
-            settings.retries.toDouble(),
-            1,
-            50,
-            (value) =>
-                _updateSettings(settings.copyWith(retries: value.toInt())),
+        ),
+        _buildSliderTile(
+          'Retries',
+          settings.retries.toDouble(),
+          1,
+          50,
+          (value) => _updateSettings(settings.copyWith(retries: value.toInt())),
+        ),
+        _buildSliderTile(
+          'Extractor Retries',
+          settings.extractorRetries.toDouble(),
+          0,
+          20,
+          (value) => _updateSettings(
+            settings.copyWith(extractorRetries: value.toInt()),
           ),
-          if (Platform.isAndroid)
-            _buildSwitchTile(
-              'Use Android aria2c engine',
-              'Optional external downloader bundled in the Android app',
-              settings.useAria2c,
-              (value) => _updateSettings(settings.copyWith(useAria2c: value)),
-            ),
-        ]),
-        _buildSectionCard('Limits', [
-          _buildTextFieldTile(
-            'Rate Limit',
-            'e.g., 1M, 500K (empty for unlimited)',
-            settings.rateLimit,
-            (value) => _updateSettings(settings.copyWith(rateLimit: value)),
-            validator: Validators.validateRateLimit,
-          ),
-          _buildTextFieldTile(
-            'Buffer Size',
-            'e.g., 1024, 16K',
-            settings.bufferSize,
-            (value) => _updateSettings(settings.copyWith(bufferSize: value)),
-            validator: Validators.validateBufferSize,
-          ),
-        ]),
-        _buildSectionCard('Proxy', [
-          _buildTextFieldTile(
-            'Proxy URL',
-            'e.g., socks5://127.0.0.1:1080',
-            settings.proxy,
-            (value) => _updateSettings(settings.copyWith(proxy: value)),
-            validator: Validators.validateProxy,
-          ),
-        ]),
-        _buildSectionCard('Connection', [
-          _buildSliderTile(
-            'Socket Timeout (seconds)',
-            settings.socketTimeout.toDouble(),
-            5,
-            60,
-            (value) => _updateSettings(
-              settings.copyWith(socketTimeout: value.toInt()),
-            ),
-          ),
+        ),
+        _buildSwitchTile(
+          'Verify selected formats',
+          'Ask yt-dlp to check that selected media URLs are downloadable',
+          settings.checkFormats,
+          (value) => _updateSettings(settings.copyWith(checkFormats: value)),
+        ),
+        if (Platform.isAndroid)
           _buildSwitchTile(
-            'Force IPv4',
-            'Use IPv4 for all requests',
-            settings.forceIpv4,
-            (value) => _updateSettings(
-              settings.copyWith(forceIpv4: value, forceIpv6: false),
-            ),
+            'Use Android aria2c engine',
+            'Optional external downloader bundled in the Android app',
+            settings.useAria2c,
+            (value) => _updateSettings(settings.copyWith(useAria2c: value)),
           ),
-          _buildSwitchTile(
-            'Force IPv6',
-            'Use IPv6 for all requests',
-            settings.forceIpv6,
-            (value) => _updateSettings(
-              settings.copyWith(forceIpv6: value, forceIpv4: false),
-            ),
+      ]),
+      _buildSectionCard('Limits', [
+        _buildTextFieldTile(
+          'Rate Limit',
+          'e.g., 1M, 500K (empty for unlimited)',
+          settings.rateLimit,
+          (value) => _updateSettings(settings.copyWith(rateLimit: value)),
+          validator: Validators.validateRateLimit,
+        ),
+        _buildTextFieldTile(
+          'Buffer Size',
+          'e.g., 1024, 16K',
+          settings.bufferSize,
+          (value) => _updateSettings(settings.copyWith(bufferSize: value)),
+          validator: Validators.validateBufferSize,
+        ),
+      ]),
+      _buildSectionCard('Proxy', [
+        _buildTextFieldTile(
+          'Proxy URL',
+          'e.g., socks5://127.0.0.1:1080',
+          settings.proxy,
+          (value) => _updateSettings(settings.copyWith(proxy: value)),
+          validator: Validators.validateProxy,
+        ),
+      ]),
+      _buildSectionCard('Connection', [
+        _buildSliderTile(
+          'Socket Timeout (seconds)',
+          settings.socketTimeout.toDouble(),
+          5,
+          60,
+          (value) =>
+              _updateSettings(settings.copyWith(socketTimeout: value.toInt())),
+        ),
+        _buildSwitchTile(
+          'Force IPv4',
+          'Use IPv4 for all requests',
+          settings.forceIpv4,
+          (value) => _updateSettings(
+            settings.copyWith(forceIpv4: value, forceIpv6: false),
           ),
-        ]),
-      ],
-    );
+        ),
+        _buildSwitchTile(
+          'Force IPv6',
+          'Use IPv6 for all requests',
+          settings.forceIpv6,
+          (value) => _updateSettings(
+            settings.copyWith(forceIpv6: value, forceIpv4: false),
+          ),
+        ),
+      ]),
+    ]);
   }
 
   Widget _buildSubtitlesTab(YtDlpSettings settings) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _buildSectionCard('Caption preferences', [
-          _buildSwitchTile(
-            'Auto-Generated Subtitles',
-            'Include auto-generated subtitles',
-            settings.autoSubtitles,
-            (value) => _updateSettings(settings.copyWith(autoSubtitles: value)),
-          ),
-          _buildTextFieldTile(
-            'Languages',
-            'e.g., en,fa,ar (comma-separated)',
-            settings.subtitleLanguages,
-            (value) =>
-                _updateSettings(settings.copyWith(subtitleLanguages: value)),
-            validator: Validators.validateLanguageCodes,
-          ),
-          _buildDropdownTile(
-            'Subtitle Format',
-            settings.subtitleFormat,
-            ['srt', 'vtt', 'ass', 'lrc'],
-            (value) =>
-                _updateSettings(settings.copyWith(subtitleFormat: value!)),
-          ),
-        ]),
-      ],
-    );
+    return _buildResponsiveTab([
+      _buildSectionCard('Caption preferences', [
+        _buildSwitchTile(
+          'Auto-Generated Subtitles',
+          'Include auto-generated subtitles',
+          settings.autoSubtitles,
+          (value) => _updateSettings(settings.copyWith(autoSubtitles: value)),
+        ),
+        _buildTextFieldTile(
+          'Languages',
+          'e.g., en,fa,ar (comma-separated)',
+          settings.subtitleLanguages,
+          (value) =>
+              _updateSettings(settings.copyWith(subtitleLanguages: value)),
+          validator: Validators.validateLanguageCodes,
+        ),
+        _buildDropdownTile(
+          'Subtitle Format',
+          settings.subtitleFormat,
+          ['srt', 'vtt', 'ass', 'lrc'],
+          (value) => _updateSettings(settings.copyWith(subtitleFormat: value!)),
+        ),
+      ]),
+    ]);
   }
 
   Widget _buildAdvancedTab(YtDlpSettings settings) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _buildSectionCard('Engine', [
-          const ListTile(
-            leading: Icon(Icons.system_update_alt_rounded),
-            title: Text('Official release channel'),
-            subtitle: Text(
-              'Nightly is recommended by yt-dlp for regular users. Stable '
-              'changes less often; master follows every development build.',
-            ),
+    return _buildResponsiveTab([
+      _buildSectionCard('Engine', [
+        const ListTile(
+          leading: Icon(Icons.system_update_alt_rounded),
+          title: Text('Official release channel'),
+          subtitle: Text(
+            'Nightly is recommended by yt-dlp for regular users. Stable '
+            'changes less often; master follows every development build.',
           ),
+        ),
+        _buildDropdownTile(
+          'Update Channel',
+          settings.updateChannel,
+          const ['stable', 'nightly', 'master'],
+          (value) {
+            if (value != null) {
+              _updateSettings(settings.copyWith(updateChannel: value));
+            }
+          },
+        ),
+        if (Platform.isAndroid)
+          ListTile(
+            leading: const Icon(Icons.javascript_rounded),
+            title: const Text('Android engine with QuickJS'),
+            subtitle: Text(
+              _androidEngineVersion == null
+                  ? 'QuickJS is bundled for YouTube JavaScript challenges.'
+                  : 'yt-dlp $_androidEngineVersion · QuickJS bundled',
+            ),
+            trailing: _updatingAndroidEngine
+                ? const SizedBox.square(
+                    dimension: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : IconButton(
+                    tooltip: 'Update now',
+                    onPressed: () =>
+                        _updateAndroidEngine(settings.updateChannel),
+                    icon: const Icon(Icons.system_update_alt_rounded),
+                  ),
+          )
+        else ...[
           _buildDropdownTile(
-            'Update Channel',
-            settings.updateChannel,
-            const ['stable', 'nightly', 'master'],
+            'JavaScript Runtime',
+            settings.jsRuntime,
+            const ['auto', 'deno', 'node', 'quickjs', 'bun'],
             (value) {
               if (value != null) {
-                _updateSettings(settings.copyWith(updateChannel: value));
+                _updateSettings(settings.copyWith(jsRuntime: value));
               }
             },
           ),
-          if (Platform.isAndroid)
-            ListTile(
-              leading: const Icon(Icons.javascript_rounded),
-              title: const Text('Android engine with QuickJS'),
-              subtitle: Text(
-                _androidEngineVersion == null
-                    ? 'QuickJS is bundled for YouTube JavaScript challenges.'
-                    : 'yt-dlp $_androidEngineVersion · QuickJS bundled',
-              ),
-              trailing: _updatingAndroidEngine
-                  ? const SizedBox.square(
-                      dimension: 24,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : IconButton(
-                      tooltip: 'Update now',
-                      onPressed: () =>
-                          _updateAndroidEngine(settings.updateChannel),
-                      icon: const Icon(Icons.system_update_alt_rounded),
-                    ),
-            )
-          else ...[
-            _buildDropdownTile(
-              'JavaScript Runtime',
-              settings.jsRuntime,
-              const ['auto', 'deno', 'node', 'quickjs', 'bun'],
-              (value) {
-                if (value != null) {
-                  _updateSettings(settings.copyWith(jsRuntime: value));
-                }
-              },
+          if (settings.jsRuntime != 'auto')
+            _buildTextFieldTile(
+              'Runtime Path (optional)',
+              'Executable path or containing directory',
+              settings.jsRuntimePath,
+              (value) =>
+                  _updateSettings(settings.copyWith(jsRuntimePath: value)),
             ),
-            if (settings.jsRuntime != 'auto')
-              _buildTextFieldTile(
-                'Runtime Path (optional)',
-                'Executable path or containing directory',
-                settings.jsRuntimePath,
-                (value) =>
-                    _updateSettings(settings.copyWith(jsRuntimePath: value)),
-              ),
+        ],
+        _buildSwitchTile(
+          'Allow remote EJS components',
+          'Opt in to fetching YouTube challenge scripts from the official '
+              'yt-dlp-ejs GitHub releases when required.',
+          settings.allowRemoteComponents,
+          (value) =>
+              _updateSettings(settings.copyWith(allowRemoteComponents: value)),
+        ),
+      ]),
+      _buildSectionCard('Logging', [
+        _buildSwitchTile(
+          'Verbose Output',
+          'Print detailed debugging information',
+          settings.verbose,
+          (value) => _updateSettings(settings.copyWith(verbose: value)),
+        ),
+      ]),
+      _buildSectionCard('Rate Limiting', [
+        _buildTextFieldTile(
+          'Min Sleep Interval',
+          'Minimum seconds to sleep between requests',
+          settings.minSleepInterval,
+          (value) =>
+              _updateSettings(settings.copyWith(minSleepInterval: value)),
+          validator: Validators.validateSleepInterval,
+        ),
+        _buildTextFieldTile(
+          'Max Sleep Interval',
+          'Maximum seconds to sleep between requests',
+          settings.maxSleepInterval,
+          (value) =>
+              _updateSettings(settings.copyWith(maxSleepInterval: value)),
+          validator: Validators.validateSleepInterval,
+        ),
+        _buildTextFieldTile(
+          'Retry Sleep',
+          'e.g., http:linear=1::2 or fragment:exp=1:20',
+          settings.retrySleep,
+          (value) => _updateSettings(settings.copyWith(retrySleep: value)),
+        ),
+        _buildTextFieldTile(
+          'Sleep Between Requests',
+          'Seconds between extraction requests',
+          settings.sleepRequests,
+          (value) => _updateSettings(settings.copyWith(sleepRequests: value)),
+          validator: Validators.validateSleepInterval,
+        ),
+        _buildTextFieldTile(
+          'Sleep Before Subtitles',
+          'Seconds before each subtitle request',
+          settings.sleepSubtitles,
+          (value) => _updateSettings(settings.copyWith(sleepSubtitles: value)),
+          validator: Validators.validateSleepInterval,
+        ),
+      ]),
+      _buildSectionCard('Extraction & Identity', [
+        _buildTextFieldTile(
+          'Extractor Arguments',
+          'e.g., youtube:player_client=web,android',
+          settings.extractorArgs,
+          (value) => _updateSettings(settings.copyWith(extractorArgs: value)),
+        ),
+        _buildTextFieldTile(
+          'Impersonate Target',
+          'e.g., chrome or chrome-136:windows-10',
+          settings.impersonateTarget,
+          (value) =>
+              _updateSettings(settings.copyWith(impersonateTarget: value)),
+        ),
+        if (settings.impersonateTarget.isNotEmpty)
+          const ListTile(
+            leading: Icon(Icons.warning_amber_rounded),
+            title: Text('Use impersonation only when a site requires it'),
+            subtitle: Text(
+              'yt-dlp warns that forcing a target may reduce download speed '
+              'or stability. Clear the field to return to automatic behavior.',
+            ),
+          ),
+      ]),
+      _buildSectionCard('Live streams & scheduled media', [
+        _buildSwitchTile(
+          'Download live stream from the start',
+          'Experimental yt-dlp mode for supported live sites',
+          settings.liveFromStart,
+          (value) => _updateSettings(settings.copyWith(liveFromStart: value)),
+        ),
+        _buildSwitchTile(
+          'Use MPEG-TS for HLS',
+          'Allows interrupted live downloads to keep playable fragments',
+          settings.hlsUseMpegTs,
+          (value) => _updateSettings(settings.copyWith(hlsUseMpegTs: value)),
+        ),
+        _buildTextFieldTile(
+          'Wait for scheduled video',
+          'Seconds or range, for example 60 or 30-120',
+          settings.waitForVideo,
+          (value) => _updateSettings(settings.copyWith(waitForVideo: value)),
+          validator: Validators.validateSleepInterval,
+        ),
+      ]),
+      _buildSectionCard('Advanced Options', [
+        _buildTextFieldTile(
+          'User Agent',
+          'Custom user agent string',
+          settings.userAgent,
+          (value) => _updateSettings(settings.copyWith(userAgent: value)),
+        ),
+      ]),
+    ]);
+  }
+
+  Widget _buildResponsiveTab(List<Widget> sections) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final twoColumns = constraints.maxWidth >= 920;
+        const gap = 16.0;
+        final itemWidth = twoColumns
+            ? (constraints.maxWidth - 32 - gap) / 2
+            : constraints.maxWidth - 32;
+        return ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Wrap(
+              spacing: gap,
+              runSpacing: gap,
+              crossAxisAlignment: WrapCrossAlignment.start,
+              children: [
+                for (final section in sections)
+                  SizedBox(width: itemWidth, child: section),
+              ],
+            ),
           ],
-          _buildSwitchTile(
-            'Allow remote EJS components',
-            'Opt in to fetching YouTube challenge scripts from the official '
-                'yt-dlp-ejs GitHub releases when required.',
-            settings.allowRemoteComponents,
-            (value) => _updateSettings(
-              settings.copyWith(allowRemoteComponents: value),
-            ),
-          ),
-        ]),
-        _buildSectionCard('Logging', [
-          _buildSwitchTile(
-            'Verbose Output',
-            'Print detailed debugging information',
-            settings.verbose,
-            (value) => _updateSettings(settings.copyWith(verbose: value)),
-          ),
-        ]),
-        _buildSectionCard('Rate Limiting', [
-          _buildTextFieldTile(
-            'Min Sleep Interval',
-            'Minimum seconds to sleep between requests',
-            settings.minSleepInterval,
-            (value) =>
-                _updateSettings(settings.copyWith(minSleepInterval: value)),
-            validator: Validators.validateSleepInterval,
-          ),
-          _buildTextFieldTile(
-            'Max Sleep Interval',
-            'Maximum seconds to sleep between requests',
-            settings.maxSleepInterval,
-            (value) =>
-                _updateSettings(settings.copyWith(maxSleepInterval: value)),
-            validator: Validators.validateSleepInterval,
-          ),
-          _buildTextFieldTile(
-            'Retry Sleep',
-            'e.g., http:linear=1::2 or fragment:exp=1:20',
-            settings.retrySleep,
-            (value) => _updateSettings(settings.copyWith(retrySleep: value)),
-          ),
-          _buildTextFieldTile(
-            'Sleep Between Requests',
-            'Seconds between extraction requests',
-            settings.sleepRequests,
-            (value) => _updateSettings(settings.copyWith(sleepRequests: value)),
-            validator: Validators.validateSleepInterval,
-          ),
-          _buildTextFieldTile(
-            'Sleep Before Subtitles',
-            'Seconds before each subtitle request',
-            settings.sleepSubtitles,
-            (value) =>
-                _updateSettings(settings.copyWith(sleepSubtitles: value)),
-            validator: Validators.validateSleepInterval,
-          ),
-        ]),
-        _buildSectionCard('Extraction & Identity', [
-          _buildTextFieldTile(
-            'Extractor Arguments',
-            'e.g., youtube:player_client=web,android',
-            settings.extractorArgs,
-            (value) => _updateSettings(settings.copyWith(extractorArgs: value)),
-          ),
-          _buildTextFieldTile(
-            'Impersonate Target',
-            'e.g., chrome or chrome-136:windows-10',
-            settings.impersonateTarget,
-            (value) =>
-                _updateSettings(settings.copyWith(impersonateTarget: value)),
-          ),
-        ]),
-        _buildSectionCard('Advanced Options', [
-          _buildTextFieldTile(
-            'User Agent',
-            'Custom user agent string',
-            settings.userAgent,
-            (value) => _updateSettings(settings.copyWith(userAgent: value)),
-          ),
-        ]),
-      ],
+        );
+      },
     );
   }
 

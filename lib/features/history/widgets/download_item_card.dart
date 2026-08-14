@@ -17,12 +17,18 @@ class DownloadItemCard extends StatelessWidget {
     this.onDelete,
     this.onRetry,
     this.onCancel,
+    this.selectionMode = false,
+    this.selected = false,
+    this.onSelectionChanged,
   });
 
   final DownloadItem item;
   final VoidCallback? onDelete;
   final VoidCallback? onRetry;
   final VoidCallback? onCancel;
+  final bool selectionMode;
+  final bool selected;
+  final ValueChanged<bool>? onSelectionChanged;
 
   bool get _active =>
       item.status == DownloadStatus.pending ||
@@ -38,9 +44,22 @@ class DownloadItemCard extends StatelessWidget {
     return Card(
       margin: EdgeInsets.zero,
       clipBehavior: Clip.antiAlias,
-      color: colors.surfaceContainerLow,
+      color: selected
+          ? colors.secondaryContainer.withValues(alpha: 0.72)
+          : colors.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: selected
+            ? BorderSide(color: colors.primary, width: 2)
+            : BorderSide.none,
+      ),
       child: InkWell(
-        onTap: () => _showDetails(context),
+        onTap: selectionMode
+            ? () => onSelectionChanged?.call(!selected)
+            : () => _showDetails(context),
+        onLongPress: onSelectionChanged == null
+            ? null
+            : () => onSelectionChanged?.call(true),
         child: Column(
           children: [
             LayoutBuilder(
@@ -165,11 +184,21 @@ class DownloadItemCard extends StatelessWidget {
                 ),
               ),
             ),
-            _MoreMenu(
-              item: item,
-              canShare: _mainFileExists,
-              onSelected: (value) => _handleMenu(context, value),
-            ),
+            if (selectionMode)
+              Tooltip(
+                message: selected ? 'Deselect download' : 'Select download',
+                child: Checkbox(
+                  value: selected,
+                  onChanged: (value) =>
+                      onSelectionChanged?.call(value ?? false),
+                ),
+              )
+            else
+              _MoreMenu(
+                item: item,
+                canShare: _mainFileExists,
+                onSelected: (value) => _handleMenu(context, value),
+              ),
           ],
         ),
         const SizedBox(height: 7),
@@ -224,6 +253,16 @@ class DownloadItemCard extends StatelessWidget {
   }
 
   Widget _primaryAction(BuildContext context) {
+    if (selectionMode) {
+      return TextButton.icon(
+        onPressed: () => onSelectionChanged?.call(!selected),
+        icon: Icon(
+          selected ? Icons.check_circle_rounded : Icons.circle_outlined,
+          size: 19,
+        ),
+        label: Text(selected ? 'Selected' : 'Select'),
+      );
+    }
     if (_active && onCancel != null) {
       return TextButton.icon(
         onPressed: onCancel,

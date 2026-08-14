@@ -66,32 +66,6 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
       flutter_controller_->engine()->ReloadSystemFonts();
       break;
 
-    case WM_GETMINMAXINFO: {
-      // Set window size constraints
-      MINMAXINFO* mmi = reinterpret_cast<MINMAXINFO*>(lparam);
-
-      // Minimum size: 800x600
-      mmi->ptMinTrackSize.x = 800;
-      mmi->ptMinTrackSize.y = 600;
-
-      // Maximum size: 1600x1000 (prevent maximize)
-      mmi->ptMaxTrackSize.x = 1600;
-      mmi->ptMaxTrackSize.y = 1000;
-
-      // Prevent full maximize
-      mmi->ptMaxSize.x = 1600;
-      mmi->ptMaxSize.y = 1000;
-
-      return 0;
-    }
-
-    case WM_SYSCOMMAND: {
-      // Prevent maximize
-      if ((wparam & 0xFFF0) == SC_MAXIMIZE) {
-        return 0;
-      }
-      break;
-    }
   }
 
   return Win32Window::MessageHandler(hwnd, message, wparam, lparam);

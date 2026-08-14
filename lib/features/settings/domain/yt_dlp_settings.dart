@@ -20,6 +20,9 @@ class YtDlpSettings {
   final int retries;
   final int fragmentRetries;
   final int fileAccessRetries;
+  final int extractorRetries;
+  final bool checkFormats;
+  final bool hlsUseMpegTs;
   final String rateLimit;
   final String throttledRate;
   final bool useAria2c;
@@ -131,6 +134,9 @@ class YtDlpSettings {
     this.retries = 10,
     this.fragmentRetries = 10,
     this.fileAccessRetries = 3,
+    this.extractorRetries = 3,
+    this.checkFormats = false,
+    this.hlsUseMpegTs = false,
     this.rateLimit = '',
     this.throttledRate = '',
     this.useAria2c = false,
@@ -233,6 +239,9 @@ class YtDlpSettings {
     int? retries,
     int? fragmentRetries,
     int? fileAccessRetries,
+    int? extractorRetries,
+    bool? checkFormats,
+    bool? hlsUseMpegTs,
     String? rateLimit,
     String? throttledRate,
     bool? useAria2c,
@@ -328,6 +337,9 @@ class YtDlpSettings {
       retries: retries ?? this.retries,
       fragmentRetries: fragmentRetries ?? this.fragmentRetries,
       fileAccessRetries: fileAccessRetries ?? this.fileAccessRetries,
+      extractorRetries: extractorRetries ?? this.extractorRetries,
+      checkFormats: checkFormats ?? this.checkFormats,
+      hlsUseMpegTs: hlsUseMpegTs ?? this.hlsUseMpegTs,
       rateLimit: rateLimit ?? this.rateLimit,
       throttledRate: throttledRate ?? this.throttledRate,
       useAria2c: useAria2c ?? this.useAria2c,
@@ -465,8 +477,6 @@ class YtDlpSettings {
     cookiesFromBrowser: '',
     downloadArchive: '',
     breakPerInput: false,
-    liveFromStart: false,
-    waitForVideo: '',
   );
 
   List<String> toYtDlpArgs() {
@@ -497,6 +507,9 @@ class YtDlpSettings {
     if (fileAccessRetries != 3) {
       args.addAll(['--file-access-retries', '$fileAccessRetries']);
     }
+    args.addAll(['--extractor-retries', '$extractorRetries']);
+    if (checkFormats) args.add('--check-formats');
+    if (hlsUseMpegTs) args.add('--hls-use-mpegts');
     if (rateLimit.isNotEmpty) args.addAll(['-r', rateLimit]);
     if (throttledRate.isNotEmpty) {
       args.addAll(['--throttled-rate', throttledRate]);
@@ -546,6 +559,10 @@ class YtDlpSettings {
     if (impersonateTarget.isNotEmpty) {
       args.addAll(['--impersonate', impersonateTarget]);
     }
+    if (liveFromStart) args.add('--live-from-start');
+    if (waitForVideo.isNotEmpty) {
+      args.addAll(['--wait-for-video', waitForVideo]);
+    }
 
     // MBNDL owns playlist detection, output naming, duplicate handling,
     // subtitles, covers and post-processing. These safe defaults cannot be
@@ -571,6 +588,8 @@ class YtDlpSettings {
     if (allowRemoteComponents) {
       args.addAll(['--remote-components', 'ejs:github']);
     }
+    args.addAll(['--extractor-retries', '$extractorRetries']);
+    if (checkFormats) args.add('--check-formats');
     if (proxy.isNotEmpty) args.addAll(['--proxy', proxy]);
     args.addAll(['--socket-timeout', '$socketTimeout']);
     if (sourceAddress.isNotEmpty) {
@@ -592,6 +611,10 @@ class YtDlpSettings {
     if (impersonateTarget.isNotEmpty) {
       args.addAll(['--impersonate', impersonateTarget]);
     }
+    if (liveFromStart) args.add('--live-from-start');
+    if (waitForVideo.isNotEmpty) {
+      args.addAll(['--wait-for-video', waitForVideo]);
+    }
     return args;
   }
 
@@ -610,6 +633,9 @@ class YtDlpSettings {
     'retries': retries,
     'fragmentRetries': fragmentRetries,
     'fileAccessRetries': fileAccessRetries,
+    'extractorRetries': extractorRetries,
+    'checkFormats': checkFormats,
+    'hlsUseMpegTs': hlsUseMpegTs,
     'rateLimit': rateLimit,
     'throttledRate': throttledRate,
     'useAria2c': useAria2c,
@@ -724,6 +750,9 @@ class YtDlpSettings {
       retries: json['retries'] ?? 10,
       fragmentRetries: json['fragmentRetries'] ?? 10,
       fileAccessRetries: json['fileAccessRetries'] ?? 3,
+      extractorRetries: json['extractorRetries'] ?? 3,
+      checkFormats: json['checkFormats'] ?? false,
+      hlsUseMpegTs: json['hlsUseMpegTs'] ?? false,
       rateLimit: json['rateLimit'] ?? '',
       throttledRate: json['throttledRate'] ?? '',
       useAria2c: json['useAria2c'] ?? false,
@@ -812,6 +841,7 @@ class YtDlpSettings {
     retries: 10,
     fragmentRetries: 10,
     fileAccessRetries: 3,
+    extractorRetries: 3,
     socketTimeout: 20,
   );
 
@@ -823,6 +853,7 @@ class YtDlpSettings {
     concurrentFragments: 8,
     retries: 10,
     fragmentRetries: 10,
+    extractorRetries: 3,
     socketTimeout: 20,
   );
 
@@ -833,6 +864,7 @@ class YtDlpSettings {
     retries: 30,
     fragmentRetries: 30,
     fileAccessRetries: 10,
+    extractorRetries: 10,
     socketTimeout: 60,
     retrySleep: 'http:exp=1:20',
   );
@@ -843,6 +875,7 @@ class YtDlpSettings {
     retries: 10,
     fragmentRetries: 10,
     fileAccessRetries: 3,
+    extractorRetries: 5,
     socketTimeout: 30,
     minSleepInterval: '5',
     maxSleepInterval: '10',
@@ -855,6 +888,7 @@ class YtDlpSettings {
     retries: 20,
     fragmentRetries: 20,
     fileAccessRetries: 5,
+    extractorRetries: 5,
     rateLimit: '2M',
     socketTimeout: 60,
   );

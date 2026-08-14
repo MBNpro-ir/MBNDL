@@ -29,6 +29,10 @@ void main() {
         cookiesFromBrowser: 'firefox',
         downloadArchive: 'archive.txt',
         liveFromStart: true,
+        waitForVideo: '30-120',
+        extractorRetries: 7,
+        checkFormats: true,
+        hlsUseMpegTs: true,
       );
       final args = settings.toYtDlpArgs();
 
@@ -49,7 +53,11 @@ void main() {
       expect(args, containsAll(['--impersonate', 'chrome']));
       expect(args, isNot(contains('--cookies-from-browser')));
       expect(args, isNot(contains('--download-archive')));
-      expect(args, isNot(contains('--live-from-start')));
+      expect(args, contains('--live-from-start'));
+      expect(args, containsAll(['--wait-for-video', '30-120']));
+      expect(args, containsAll(['--extractor-retries', '7']));
+      expect(args, contains('--check-formats'));
+      expect(args, contains('--hls-use-mpegts'));
       expect(args, containsAll(['--continue', '--no-overwrites']));
     });
 
@@ -71,12 +79,16 @@ void main() {
               updateChannel: 'stable',
               allowRemoteComponents: true,
               breakPerInput: true,
+              extractorRetries: 8,
+              checkFormats: true,
             )
             .toJson(),
       );
       expect(restored.updateChannel, 'stable');
       expect(restored.allowRemoteComponents, isTrue);
       expect(restored.breakPerInput, isTrue);
+      expect(restored.extractorRetries, 8);
+      expect(restored.checkFormats, isTrue);
     });
 
     test('normalizes settings owned by the app workflow', () {

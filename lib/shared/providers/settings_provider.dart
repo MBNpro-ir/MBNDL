@@ -10,6 +10,7 @@ import '../../services/logger/app_logger.dart';
 import '../../services/storage/settings_storage_service.dart';
 import '../../services/storage/storage_service.dart';
 import '../models/delete_preference.dart';
+import '../models/windows_close_behavior.dart';
 
 final themeModeProvider = NotifierProvider<ThemeModeNotifier, AppThemeMode>(
   ThemeModeNotifier.new,
@@ -164,6 +165,7 @@ class YtDlpSettingsNotifier extends Notifier<YtDlpSettings> {
         retries: preset.retries,
         fragmentRetries: preset.fragmentRetries,
         fileAccessRetries: preset.fileAccessRetries,
+        extractorRetries: preset.extractorRetries,
         rateLimit: preset.rateLimit,
         throttledRate: preset.throttledRate,
         useAria2c: preset.useAria2c,
@@ -200,5 +202,31 @@ class DeletePreferenceNotifier extends Notifier<DeletePreference> {
   Future<void> setPreference(DeletePreference preference) async {
     state = preference;
     await StorageService.instance.setInt('delete_preference', preference.index);
+  }
+}
+
+final windowsCloseBehaviorProvider =
+    NotifierProvider<WindowsCloseBehaviorNotifier, WindowsCloseBehavior>(
+      WindowsCloseBehaviorNotifier.new,
+    );
+
+class WindowsCloseBehaviorNotifier extends Notifier<WindowsCloseBehavior> {
+  static const _storageKey = 'windows_close_behavior';
+
+  @override
+  WindowsCloseBehavior build() {
+    final index =
+        StorageService.instance.getInt(
+          _storageKey,
+          defaultValue: WindowsCloseBehavior.ask.index,
+        ) ??
+        WindowsCloseBehavior.ask.index;
+    return WindowsCloseBehavior.values.elementAtOrNull(index) ??
+        WindowsCloseBehavior.ask;
+  }
+
+  Future<void> setBehavior(WindowsCloseBehavior behavior) async {
+    state = behavior;
+    await StorageService.instance.setInt(_storageKey, behavior.index);
   }
 }

@@ -19,6 +19,7 @@ import 'services/permissions/permission_service.dart';
 import 'services/storage/cookie_storage_service.dart';
 import 'services/storage/settings_storage_service.dart';
 import 'services/storage/storage_service.dart';
+import 'shared/models/windows_close_behavior.dart';
 import 'shared/providers/settings_provider.dart';
 import 'shared/providers/app_update_provider.dart';
 import 'shared/providers/cookie_provider.dart';
@@ -161,6 +162,16 @@ class _MBNDownloaderAppState extends ConsumerState<MBNDownloaderApp>
   @override
   Future<void> onWindowClose() async {
     if (!Platform.isWindows || _isQuitting || _closePromptVisible) return;
+    final closeBehavior = ref.read(windowsCloseBehaviorProvider);
+    if (closeBehavior == WindowsCloseBehavior.minimizeToTray) {
+      await _hideWindowsWindow();
+      return;
+    }
+    if (closeBehavior == WindowsCloseBehavior.exit) {
+      await _quitWindowsApp();
+      return;
+    }
+
     final dialogContext = rootNavigatorKey.currentContext;
     if (dialogContext == null) {
       await _hideWindowsWindow();
@@ -168,38 +179,93 @@ class _MBNDownloaderAppState extends ConsumerState<MBNDownloaderApp>
     }
 
     _closePromptVisible = true;
-    final action = await showDialog<_WindowsCloseAction>(
+    final decision = await showDialog<_WindowsCloseDecision>(
       context: dialogContext,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        icon: const Icon(Icons.power_settings_new_rounded),
-        title: const Text('Close MBNDL?'),
-        content: const Text(
-          'Keep downloads running in the system tray, exit the app completely, '
-          'or cancel and return to MBNDL.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, _WindowsCloseAction.cancel),
-            child: const Text('Cancel'),
+      builder: (context) {
+        var rememberSelection = false;
+        return StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            icon: const Icon(Icons.power_settings_new_rounded),
+            title: const Text('Close MBNDL?'),
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Keep downloads running in the system tray, exit the app '
+                    'completely, or cancel and return to MBNDL.',
+                  ),
+                  const SizedBox(height: 12),
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    value: rememberSelection,
+                    title: const Text('Remember this selection'),
+                    subtitle: const Text(
+                      'You can change it later in Settings → App behavior.',
+                    ),
+                    onChanged: (value) => setDialogState(
+                      () => rememberSelection = value ?? false,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(
+                  context,
+                  const _WindowsCloseDecision(_WindowsCloseAction.cancel),
+                ),
+                child: const Text('Cancel'),
+              ),
+              FilledButton.tonalIcon(
+                onPressed: () => Navigator.pop(
+                  context,
+                  _WindowsCloseDecision(
+                    _WindowsCloseAction.minimizeToTray,
+                    remember: rememberSelection,
+                  ),
+                ),
+                icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                label: const Text('Minimize to tray'),
+              ),
+              FilledButton.icon(
+                onPressed: () => Navigator.pop(
+                  context,
+                  _WindowsCloseDecision(
+                    _WindowsCloseAction.exit,
+                    remember: rememberSelection,
+                  ),
+                ),
+                icon: const Icon(Icons.logout_rounded),
+                label: const Text('Exit'),
+              ),
+            ],
           ),
-          FilledButton.tonalIcon(
-            onPressed: () =>
-                Navigator.pop(context, _WindowsCloseAction.minimizeToTray),
-            icon: const Icon(Icons.expand_more_rounded),
-            label: const Text('Minimize to tray'),
-          ),
-          FilledButton.icon(
-            onPressed: () => Navigator.pop(context, _WindowsCloseAction.exit),
-            icon: const Icon(Icons.logout_rounded),
-            label: const Text('Exit'),
-          ),
-        ],
-      ),
+        );
+      },
     );
     _closePromptVisible = false;
 
-    switch (action) {
+    if (decision?.remember == true) {
+      final behavior = switch (decision!.action) {
+        _WindowsCloseAction.minimizeToTray =>
+          WindowsCloseBehavior.minimizeToTray,
+        _WindowsCloseAction.exit => WindowsCloseBehavior.exit,
+        _WindowsCloseAction.cancel => WindowsCloseBehavior.ask,
+      };
+      if (decision.action != _WindowsCloseAction.cancel) {
+        await ref
+            .read(windowsCloseBehaviorProvider.notifier)
+            .setBehavior(behavior);
+      }
+    }
+
+    switch (decision?.action) {
       case _WindowsCloseAction.minimizeToTray:
         await _hideWindowsWindow();
       case _WindowsCloseAction.exit:
@@ -492,6 +558,13 @@ class _MBNDownloaderAppState extends ConsumerState<MBNDownloaderApp>
 }
 
 enum _WindowsCloseAction { minimizeToTray, exit, cancel }
+
+class _WindowsCloseDecision {
+  const _WindowsCloseDecision(this.action, {this.remember = false});
+
+  final _WindowsCloseAction action;
+  final bool remember;
+}
 
 enum _YouTubeAuthAction { later, manageAccounts }
 

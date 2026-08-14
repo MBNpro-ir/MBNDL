@@ -86,7 +86,7 @@ class _MainScaffoldState extends State<MainScaffold> {
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
     final selectedIndex = _currentIndex(context);
-    final useRail = width >= 600;
+    final useRail = width >= 760;
     final isPrimaryPage = _isPrimaryPage(context);
     final swipableChild = !useRail && isPrimaryPage
         ? GestureDetector(
@@ -120,7 +120,7 @@ class _MainScaffoldState extends State<MainScaffold> {
       );
     }
 
-    final extended = width >= 1000;
+    final extended = width >= 1240;
     final colors = Theme.of(context).colorScheme;
     return Scaffold(
       body: SafeArea(

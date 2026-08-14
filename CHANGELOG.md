@@ -2,6 +2,34 @@
 
 All notable user-facing and developer-facing changes are documented in this file.
 
+## 🖥️ 1.0.4 — 2026-08-15
+
+### ✨ New
+
+- 🧠 Added **Remember this selection** to the Windows close dialog and a persistent **Settings → Appearance & behavior → When closing the window** choice.
+- ⚡ Added Quick Presets directly to Home, with one-tap Balanced, Fast, Unstable Network, Gentle YouTube, and Limited Data modes plus a shortcut to detailed yt-dlp controls.
+- ☑️ Added discoverable multi-select History actions for retrying eligible downloads, cancelling active jobs, and removing several entries and their related files together.
+- 📡 Connected documented yt-dlp controls for extractor retries, format URL verification, HLS MPEG-TS, live-from-start, and waiting for scheduled media.
+- 🌐 Expanded subtitle language input to support yt-dlp expressions such as `en.*`, `all`, and `-live_chat`.
+
+### 🛠️ Fixed
+
+- 🪟 Restored the native Windows Maximize command by removing the runner code that blocked `SC_MAXIMIZE` and imposed a fixed maximum window size.
+- 🎛️ Removed the unnecessary FFmpeg minimal-toolset explanation from Settings.
+- 🧭 Kept primary-page swipe navigation on compact layouts while moving tablets and wide windows to more appropriate rail navigation.
+
+### 🎨 Redesigned
+
+- 🧩 Reordered Settings around Downloads, Appearance, Updates, Diagnostics, Engines, and Backups, using a compact two-column workspace on wide screens.
+- 🖥️ Increased Home and History workspace widths, added two-column History cards on large displays, and made detailed yt-dlp sections responsive.
+- 🏷️ Replaced the branded Settings slogan with the clearer **Download your way** heading.
+
+### 🚀 Delivery
+
+- 🏷️ Set the application version to `1.0.4+4`.
+- 🔐 Regenerated desktop secure-storage plugin registration so encrypted YouTube account storage is available in packaged desktop builds.
+- 🤖 Revalidated the shared-cache Windows x64 and Android ARM32/ARM64 release pipeline before starting the tagged workflow.
+
 ## 🔐 1.0.3 — 2026-08-14
 
 ### ✨ New
