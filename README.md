@@ -164,6 +164,20 @@ tool/refresh_windows_bootstrap.dart Minimal FFmpeg bootstrap refresher
 .github/workflows/release.yml       Tagged Windows/Android release pipeline
 ```
 
+### ♻️ CI cache policy
+
+Every push to `main` builds Windows x64 and Android ARM32/ARM64 and refreshes
+shared Flutter SDK and pub caches in the default-branch scope. Version tags can
+restore those caches; caches created only by one tag cannot be reused by a
+different tag because GitHub isolates tag cache scopes.
+
+The workflow validates the restored Flutter version, Dart executable, target
+engine artifacts, and `flutter doctor` state before compiling. If setup or the
+health check fails, only the matching Flutter and pub cache keys are deleted,
+the SDK is installed again, and the repaired cache is saved at job completion.
+The workflow can also be run manually with `repair_cache` enabled to force a
+clean cache generation.
+
 ### 🤝 Contributing
 
 Keep platform-specific binaries out of Flutter’s shared asset list, preserve SQLite migrations, add actionable error messages for new engine failures, and run analysis plus tests before submitting changes.

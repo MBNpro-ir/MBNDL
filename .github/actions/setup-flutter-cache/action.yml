@@ -1,0 +1,90 @@
+name: Resilient Flutter cache
+description: Restores, validates, and automatically rebuilds the Flutter and pub caches.
+
+inputs:
+  flutter-version:
+    description: Exact Flutter SDK version.
+    required: true
+  channel:
+    description: Flutter release channel.
+    required: false
+    default: stable
+  precache-platform:
+    description: Flutter platform artifacts to validate (android or windows).
+    required: true
+  force-repair:
+    description: Delete matching caches before setup.
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve cache metadata
+      id: cache_metadata
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: ${{ inputs.flutter-version }}
+        channel: ${{ inputs.channel }}
+        dry-run: true
+
+    - name: Force a clean cache generation
+      if: inputs.force-repair == 'true'
+      shell: pwsh
+      env:
+        GH_TOKEN: ${{ github.token }}
+        FLUTTER_CACHE_KEY: ${{ steps.cache_metadata.outputs.CACHE-KEY }}
+        PUB_CACHE_KEY: ${{ steps.cache_metadata.outputs.PUB-CACHE-KEY }}-${{ hashFiles('**/pubspec.lock') }}
+        FLUTTER_CACHE_PATH: ${{ steps.cache_metadata.outputs.CACHE-PATH }}
+        PUB_CACHE_PATH: ${{ steps.cache_metadata.outputs.PUB-CACHE-PATH }}
+      run: ./.github/scripts/reset_flutter_cache.ps1
+
+    - name: Restore Flutter and pub caches
+      id: primary_setup
+      continue-on-error: true
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: ${{ inputs.flutter-version }}
+        channel: ${{ inputs.channel }}
+        cache: true
+        pub-cache: true
+
+    - name: Validate restored caches
+      id: primary_health
+      if: steps.primary_setup.outcome == 'success'
+      continue-on-error: true
+      shell: pwsh
+      run: >-
+        ./.github/scripts/test_flutter_cache.ps1
+        -ExpectedVersion '${{ inputs.flutter-version }}'
+        -PrecachePlatform '${{ inputs.precache-platform }}'
+
+    - name: Remove an unhealthy cache
+      id: automatic_repair
+      if: steps.primary_setup.outcome == 'failure' || steps.primary_health.outcome == 'failure'
+      shell: pwsh
+      env:
+        GH_TOKEN: ${{ github.token }}
+        FLUTTER_CACHE_KEY: ${{ steps.cache_metadata.outputs.CACHE-KEY }}
+        PUB_CACHE_KEY: ${{ steps.cache_metadata.outputs.PUB-CACHE-KEY }}-${{ hashFiles('**/pubspec.lock') }}
+        FLUTTER_CACHE_PATH: ${{ steps.cache_metadata.outputs.CACHE-PATH }}
+        PUB_CACHE_PATH: ${{ steps.cache_metadata.outputs.PUB-CACHE-PATH }}
+      run: ./.github/scripts/reset_flutter_cache.ps1
+
+    - name: Reinstall after cache repair
+      id: repaired_setup
+      if: steps.automatic_repair.outcome == 'success'
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: ${{ inputs.flutter-version }}
+        channel: ${{ inputs.channel }}
+        cache: true
+        pub-cache: true
+
+    - name: Validate rebuilt caches
+      if: steps.repaired_setup.outcome == 'success'
+      shell: pwsh
+      run: >-
+        ./.github/scripts/test_flutter_cache.ps1
+        -ExpectedVersion '${{ inputs.flutter-version }}'
+        -PrecachePlatform '${{ inputs.precache-platform }}'
