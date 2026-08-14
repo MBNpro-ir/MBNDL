@@ -267,7 +267,6 @@ class _HomePageState extends ConsumerState<HomePage> {
           quality: job.quality,
           downloadType: job.downloadType,
         );
-        final saved = await notifier.addDownload(item);
         final settings = baseSettings.copyWith(
           selectedFormatId: job.formatSelector,
           downloadType: job.downloadType,
@@ -277,21 +276,7 @@ class _HomePageState extends ConsumerState<HomePage> {
               ? baseSettings.extractAudio
               : false,
         );
-        unawaited(
-          DownloadService.instance
-              .startDownload(
-                item: saved,
-                settings: settings,
-                onUpdate: notifier.updateDownload,
-              )
-              .catchError((Object error, StackTrace stackTrace) {
-                AppLogger.error(
-                  'Background download failed',
-                  error,
-                  stackTrace,
-                );
-              }),
-        );
+        await notifier.enqueueDownload(item: item, settings: settings);
       }
 
       if (!mounted) return;

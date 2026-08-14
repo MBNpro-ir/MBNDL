@@ -27,6 +27,7 @@ import '../widgets/settings_section.dart';
 import '../widgets/download_path_settings.dart';
 import '../widgets/ytdlp_settings.dart';
 import '../widgets/ffmpeg_settings.dart';
+import '../widgets/app_update_settings.dart';
 import '../../../services/storage/settings_export_service.dart';
 import '../../../services/storage/download_path_service.dart';
 import '../../../services/permissions/permission_service.dart';
@@ -217,6 +218,22 @@ class SettingsPage extends ConsumerWidget {
                       .animate()
                       .fadeIn(duration: 300.ms)
                       .slideY(begin: -0.1, end: 0, duration: 300.ms),
+
+                  const SizedBox(height: 24),
+
+                  SettingsSection(
+                        title: 'App Updates',
+                        icon: Icons.system_update_alt_rounded,
+                        children: const [AppUpdateSettings()],
+                      )
+                      .animate()
+                      .fadeIn(delay: 80.ms, duration: 300.ms)
+                      .slideY(
+                        begin: -0.1,
+                        end: 0,
+                        delay: 80.ms,
+                        duration: 300.ms,
+                      ),
 
                   const SizedBox(height: 24),
 

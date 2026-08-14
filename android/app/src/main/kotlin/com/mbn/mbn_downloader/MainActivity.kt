@@ -3,12 +3,15 @@ package com.mbn.dl
 import android.Manifest
 import android.app.DownloadManager
 import android.content.Intent
+import android.content.ClipData
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
+import android.os.Build
 import android.os.Environment
 import android.provider.Settings
 import android.util.Log
+import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -22,10 +25,12 @@ import java.io.File
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.mbn.dl/ytdlp"
     private val EVENT_CHANNEL = "com.mbn.dl/ytdlp_events"
+    private val UPDATE_CHANNEL = "com.mbn.dl/app_updates"
     private val TAG = "MainActivity"
     private val nativeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val pendingPermissionResults = mutableMapOf<Int, MethodChannel.Result>()
     private var nextPermissionRequestCode = 1200
+    private var pendingApkPath: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -48,6 +53,46 @@ class MainActivity : FlutterActivity() {
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, EVENT_CHANNEL).setStreamHandler(
             YtDlpHelper.progressStreamHandler
         )
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, UPDATE_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "is64BitDevice" -> {
+                        result.success(Build.SUPPORTED_64_BIT_ABIS.isNotEmpty())
+                    }
+                    "openInstallPermission" -> {
+                        try {
+                            openInstallPermission()
+                            result.success(true)
+                        } catch (e: Exception) {
+                            result.error("INSTALL_PERMISSION_ERROR", e.message, null)
+                        }
+                    }
+                    "installApk" -> {
+                        val path = call.argument<String>("path")
+                        if (path.isNullOrBlank() || !File(path).isFile) {
+                            result.error("APK_NOT_FOUND", "The downloaded APK is missing", null)
+                        } else if (!canInstallPackages()) {
+                            pendingApkPath = path
+                            try {
+                                openInstallPermission()
+                                result.success(false)
+                            } catch (e: Exception) {
+                                pendingApkPath = null
+                                result.error("INSTALL_PERMISSION_ERROR", e.message, null)
+                            }
+                        } else {
+                            try {
+                                launchApkInstaller(path)
+                                result.success(true)
+                            } catch (e: Exception) {
+                                result.error("APK_INSTALL_ERROR", e.message, null)
+                            }
+                        }
+                    }
+                    else -> result.notImplemented()
+                }
+            }
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
@@ -190,6 +235,50 @@ class MainActivity : FlutterActivity() {
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        val path = pendingApkPath
+        if (path != null && canInstallPackages()) {
+            pendingApkPath = null
+            try {
+                launchApkInstaller(path)
+            } catch (e: Exception) {
+                Log.e(TAG, "Could not resume APK installation", e)
+            }
+        }
+    }
+
+    private fun canInstallPackages(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
+            packageManager.canRequestPackageInstalls()
+
+    private fun openInstallPermission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        startActivity(
+            Intent(
+                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                Uri.parse("package:$packageName")
+            )
+        )
+    }
+
+    private fun launchApkInstaller(path: String) {
+        val apk = File(path)
+        require(apk.isFile) { "The downloaded APK is missing" }
+        val uri = FileProvider.getUriForFile(
+            this,
+            "$packageName.fileprovider",
+            apk
+        )
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            clipData = ClipData.newRawUri("MBNDL update", uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        startActivity(intent)
     }
 
     private fun permissionNames(permission: String): Array<String> = when (permission) {

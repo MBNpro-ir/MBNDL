@@ -44,15 +44,16 @@ final appRouter = GoRouter(
             child: const SettingsPage(),
           ),
         ),
-        GoRoute(
-          path: '/ytdlp-settings',
-          pageBuilder: (context, state) => _buildPageWithAnimation(
-            context: context,
-            state: state,
-            child: const YtDlpSettingsPage(),
-          ),
-        ),
       ],
+    ),
+    GoRoute(
+      parentNavigatorKey: rootNavigatorKey,
+      path: '/ytdlp-settings',
+      pageBuilder: (context, state) => _buildPageWithAnimation(
+        context: context,
+        state: state,
+        child: const YtDlpSettingsPage(),
+      ),
     ),
   ],
 );

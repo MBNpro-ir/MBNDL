@@ -2,6 +2,33 @@
 
 All notable user-facing and developer-facing changes are documented in this file.
 
+## 🚀 1.0.1 — 2026-08-14
+
+### 🛠️ Fixed
+
+- 🧭 Limited horizontal page gestures to the exact Home, Downloads, and Settings routes. Swiping inside nested yt-dlp settings no longer jumps to History.
+- 📥 Replaced fire-and-forget download starts with a persistent serial queue that moves every item to Preparing and records early initialization failures instead of leaving it on Queued.
+- 🔁 Routed retry and cancellation through the same queue and restored interrupted previous-session items with a clear retry message.
+
+### ✨ New
+
+- 🔄 Added automatic application update checks and optional background downloads on Android and Windows.
+- 📱 Added automatic ARM32/ARM64 APK selection, Android 7+ compatible secure APK sharing, unknown-source permission handling, and the system package installer.
+- 🪟 Added a bundled `updater.exe` sidecar that waits for MBNDL to close, installs the new Windows bundle, and reopens the app.
+- 🛡️ Added GitHub release-asset SHA-256 verification and persistent Android release signing for future in-place upgrades.
+- ⚙️ Added **Settings → App Updates** controls for automatic checks, background downloads, manual checks, download progress, and installation.
+
+### 🎨 Redesigned
+
+- 🗂️ Rebuilt History again as a mobile-first Downloads library with grouped dates, clear status views, focused filters, logical primary actions, missing-file detection, and an artifact-rich details sheet.
+- 🖼️ Made main media, covers, subtitles, related files, published Android copies, codecs, source links, and full failure text easier to discover.
+
+### 🚀 Delivery
+
+- 🏷️ Set the application version to `1.0.1+2`.
+- 🔐 Added CI-only Android signing secrets so releases from 1.0.1 onward keep one upgrade-compatible certificate.
+- ⚠️ Android 1.0.0 users need one uninstall/reinstall because that earlier artifact used an ephemeral development key.
+
 ## 🎉 1.0.0 — 2026-08-14
 
 ### ✨ New

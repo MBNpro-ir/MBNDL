@@ -1,4 +1,3 @@
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -33,46 +32,52 @@ class _MainScaffoldState extends State<MainScaffold> {
     ),
   ];
 
-  Offset? _touchStart;
-  DateTime? _touchStartedAt;
+  double _horizontalDrag = 0;
+  DateTime? _dragStartedAt;
 
   int _currentIndex(BuildContext context) {
     final location = GoRouterState.of(context).uri.path;
-    if (location.startsWith('/history')) return 1;
-    if (location.startsWith('/settings') ||
-        location.startsWith('/ytdlp-settings')) {
-      return 2;
-    }
-    return 0;
+    return switch (location) {
+      '/history' => 1,
+      '/settings' => 2,
+      _ => 0,
+    };
   }
+
+  bool _isPrimaryPage(BuildContext context) => const {
+    '/home',
+    '/history',
+    '/settings',
+  }.contains(GoRouterState.of(context).uri.path);
 
   void _select(BuildContext context, int index) {
     context.go(_destinations[index].route);
   }
 
-  void _pointerDown(PointerDownEvent event) {
-    if (event.kind != PointerDeviceKind.touch &&
-        event.kind != PointerDeviceKind.stylus) {
-      return;
-    }
-    _touchStart = event.position;
-    _touchStartedAt = DateTime.now();
+  void _dragStart(DragStartDetails details) {
+    _horizontalDrag = 0;
+    _dragStartedAt = DateTime.now();
   }
 
-  void _pointerUp(PointerUpEvent event, int currentIndex) {
-    final start = _touchStart;
-    final startedAt = _touchStartedAt;
-    _touchStart = null;
-    _touchStartedAt = null;
-    if (start == null || startedAt == null) return;
+  void _dragUpdate(DragUpdateDetails details) {
+    _horizontalDrag += details.primaryDelta ?? 0;
+  }
+
+  void _dragEnd(DragEndDetails details, int currentIndex) {
+    final startedAt = _dragStartedAt;
+    final distance = _horizontalDrag;
+    _horizontalDrag = 0;
+    _dragStartedAt = null;
+    if (startedAt == null) return;
     if (DateTime.now().difference(startedAt) >
         const Duration(milliseconds: 750)) {
       return;
     }
 
-    final delta = event.position - start;
-    if (delta.dx.abs() < 72 || delta.dx.abs() < delta.dy.abs() * 1.35) return;
-    final nextIndex = delta.dx < 0 ? currentIndex + 1 : currentIndex - 1;
+    final velocity = details.primaryVelocity ?? 0;
+    if (distance.abs() < 72 && velocity.abs() < 650) return;
+    final direction = distance.abs() >= 24 ? distance : velocity;
+    final nextIndex = direction < 0 ? currentIndex + 1 : currentIndex - 1;
     if (nextIndex < 0 || nextIndex >= _destinations.length) return;
     _select(context, nextIndex);
   }
@@ -82,16 +87,20 @@ class _MainScaffoldState extends State<MainScaffold> {
     final width = MediaQuery.sizeOf(context).width;
     final selectedIndex = _currentIndex(context);
     final useRail = width >= 600;
-    final swipableChild = Listener(
-      behavior: HitTestBehavior.translucent,
-      onPointerDown: _pointerDown,
-      onPointerUp: (event) => _pointerUp(event, selectedIndex),
-      onPointerCancel: (_) {
-        _touchStart = null;
-        _touchStartedAt = null;
-      },
-      child: widget.child,
-    );
+    final isPrimaryPage = _isPrimaryPage(context);
+    final swipableChild = !useRail && isPrimaryPage
+        ? GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onHorizontalDragStart: _dragStart,
+            onHorizontalDragUpdate: _dragUpdate,
+            onHorizontalDragEnd: (details) => _dragEnd(details, selectedIndex),
+            onHorizontalDragCancel: () {
+              _horizontalDrag = 0;
+              _dragStartedAt = null;
+            },
+            child: widget.child,
+          )
+        : widget.child;
 
     if (!useRail) {
       return Scaffold(

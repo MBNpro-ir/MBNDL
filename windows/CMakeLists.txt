@@ -52,6 +52,15 @@ add_subdirectory(${FLUTTER_MANAGED_DIR})
 # Application build; see runner/CMakeLists.txt.
 add_subdirectory("runner")
 
+# Small sidecar used to replace the running Windows bundle safely. MBNDL copies
+# this executable to the temporary folder before starting an update.
+add_executable(mbndl_updater WIN32 "updater/main.cpp")
+set_target_properties(mbndl_updater PROPERTIES OUTPUT_NAME "updater")
+target_compile_features(mbndl_updater PRIVATE cxx_std_20)
+target_compile_options(mbndl_updater PRIVATE /W4 /WX /EHsc)
+target_compile_definitions(mbndl_updater PRIVATE UNICODE _UNICODE NOMINMAX)
+target_link_libraries(mbndl_updater PRIVATE shell32.lib user32.lib)
+
 
 # Generated plugin build rules, which manage building the plugins and adding
 # them to the application.
@@ -73,6 +82,8 @@ set(INSTALL_BUNDLE_DATA_DIR "${CMAKE_INSTALL_PREFIX}/data")
 set(INSTALL_BUNDLE_LIB_DIR "${CMAKE_INSTALL_PREFIX}")
 
 install(TARGETS ${BINARY_NAME} RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
+  COMPONENT Runtime)
+install(TARGETS mbndl_updater RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
   COMPONENT Runtime)
 
 install(FILES "${FLUTTER_ICU_DATA_FILE}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"

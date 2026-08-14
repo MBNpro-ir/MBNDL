@@ -1,11 +1,9 @@
-import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../services/downloader/download_service.dart';
 import '../../../services/logger/app_logger.dart';
 import '../../../services/storage/download_path_service.dart';
 import '../../../shared/models/download_item.dart';
@@ -13,11 +11,15 @@ import '../../../shared/providers/downloads_provider.dart';
 import '../../../shared/providers/settings_provider.dart';
 import '../widgets/download_item_card.dart';
 
-enum _StatusFilter { all, active, completed, failed, cancelled }
+enum _LibraryStatus { all, active, completed, attention }
 
 enum _DateFilter { all, today, last7Days, last30Days }
 
-enum _FileFilter { all, video, audio, cover, subtitles, missing }
+enum _MediaFilter { all, video, audio }
+
+enum _ArtifactFilter { all, cover, subtitles, missing }
+
+enum _HistoryMenuAction { clearCompleted, clearAll }
 
 class HistoryPage extends ConsumerStatefulWidget {
   const HistoryPage({super.key});
@@ -27,11 +29,11 @@ class HistoryPage extends ConsumerStatefulWidget {
 }
 
 class _HistoryPageState extends ConsumerState<HistoryPage> {
-  final TextEditingController _searchController = TextEditingController();
-  _StatusFilter _status = _StatusFilter.all;
+  final _searchController = TextEditingController();
+  _LibraryStatus _status = _LibraryStatus.all;
   _DateFilter _date = _DateFilter.all;
-  _FileFilter _file = _FileFilter.all;
-  bool _gridView = true;
+  _MediaFilter _media = _MediaFilter.all;
+  _ArtifactFilter _artifact = _ArtifactFilter.all;
 
   @override
   void dispose() {
@@ -44,352 +46,231 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
     final downloadsAsync = ref.watch(downloadsProvider);
     final sorted = ref.watch(sortedDownloadsProvider);
     final sort = ref.watch(downloadSortProvider);
+    final all = downloadsAsync.asData?.value ?? const <DownloadItem>[];
+    final filtered = sorted.where(_matchesFilters).toList(growable: false);
+    final groups = _groupDownloads(
+      filtered,
+      oldestFirst: sort == DownloadSortBy.dateOldest,
+    );
 
     return Scaffold(
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final horizontal = constraints.maxWidth > 1180
-              ? (constraints.maxWidth - 1120) / 2
-              : 16.0;
-          return RefreshIndicator(
-            onRefresh: ref.read(downloadsProvider.notifier).loadDownloads,
-            child: CustomScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              slivers: [
-                SliverAppBar.large(
-                  title: const Text('History'),
-                  actions: [
-                    IconButton(
-                      tooltip: 'Open Downloads/MBNDL',
-                      onPressed: _openDownloads,
-                      icon: const Icon(Icons.folder_open_rounded),
+      body: RefreshIndicator(
+        onRefresh: ref.read(downloadsProvider.notifier).loadDownloads,
+        child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            SliverAppBar.large(
+              title: const Text('Downloads'),
+              actions: [
+                IconButton(
+                  tooltip: 'Open Downloads/MBNDL',
+                  onPressed: _openDownloads,
+                  icon: const Icon(Icons.folder_open_rounded),
+                ),
+                PopupMenuButton<_HistoryMenuAction>(
+                  tooltip: 'Library actions',
+                  onSelected: _handleMenuAction,
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(
+                      value: _HistoryMenuAction.clearCompleted,
+                      child: ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(Icons.playlist_remove_rounded),
+                        title: Text('Clear completed'),
+                      ),
                     ),
-                    PopupMenuButton<_HistoryMenuAction>(
-                      tooltip: 'History actions',
-                      onSelected: _handleMenuAction,
-                      itemBuilder: (_) => const [
-                        PopupMenuItem(
-                          value: _HistoryMenuAction.clearCompleted,
-                          child: Text('Clear completed'),
-                        ),
-                        PopupMenuItem(
-                          value: _HistoryMenuAction.clearAll,
-                          child: Text('Clear all history'),
-                        ),
+                    PopupMenuItem(
+                      value: _HistoryMenuAction.clearAll,
+                      child: ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(Icons.delete_sweep_outlined),
+                        title: Text('Clear all history'),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(width: 8),
+              ],
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+              sliver: SliverToBoxAdapter(
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 980),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (downloadsAsync.isLoading)
+                          const LinearProgressIndicator()
+                        else if (downloadsAsync.hasError)
+                          _LoadError(
+                            onRetry: ref
+                                .read(downloadsProvider.notifier)
+                                .loadDownloads,
+                          )
+                        else ...[
+                          _LibraryOverview(downloads: all),
+                          const SizedBox(height: 16),
+                          TextField(
+                            controller: _searchController,
+                            onChanged: (_) => setState(() {}),
+                            textInputAction: TextInputAction.search,
+                            decoration: InputDecoration(
+                              prefixIcon: const Icon(Icons.search_rounded),
+                              hintText: 'Search downloads',
+                              helperText:
+                                  'Title, source link, quality, or file type',
+                              suffixIcon: _searchController.text.isEmpty
+                                  ? null
+                                  : IconButton(
+                                      tooltip: 'Clear search',
+                                      onPressed: () {
+                                        _searchController.clear();
+                                        setState(() {});
+                                      },
+                                      icon: const Icon(Icons.close_rounded),
+                                    ),
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          _StatusSelector(
+                            selected: _status,
+                            downloads: all,
+                            onChanged: (value) =>
+                                setState(() => _status = value),
+                          ),
+                          const SizedBox(height: 12),
+                          _LibraryToolbar(
+                            resultCount: filtered.length,
+                            activeFilterCount: _activeFilterCount,
+                            sort: sort,
+                            onFilters: _showFilters,
+                            onSort: (value) => ref
+                                .read(downloadSortProvider.notifier)
+                                .setSort(value),
+                          ),
+                        ],
                       ],
                     ),
-                    const SizedBox(width: 8),
-                  ],
+                  ),
+                ),
+              ),
+            ),
+            if (downloadsAsync.hasValue && filtered.isEmpty)
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                sliver: SliverToBoxAdapter(
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 980),
+                      child: _EmptyLibrary(
+                        hasDownloads: all.isNotEmpty,
+                        onReset: _resetFilters,
+                        onDownload: () => context.go('/home'),
+                      ),
+                    ),
+                  ),
+                ),
+              )
+            else
+              for (final group in groups.entries) ...[
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                  sliver: SliverToBoxAdapter(
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 980),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                group.key,
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(fontWeight: FontWeight.w800),
+                              ),
+                            ),
+                            Text(
+                              '${group.value.length}',
+                              style: Theme.of(context).textTheme.labelLarge
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                  ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
                 SliverPadding(
-                  padding: EdgeInsets.fromLTRB(horizontal, 4, horizontal, 16),
-                  sliver: SliverToBoxAdapter(
-                    child: downloadsAsync.when(
-                      loading: () => const LinearProgressIndicator(),
-                      error: (error, stackTrace) => _ErrorPanel(
-                        onRetry: ref
-                            .read(downloadsProvider.notifier)
-                            .loadDownloads,
-                      ),
-                      data: (all) => Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          _buildSummary(all),
-                          const SizedBox(height: 16),
-                          _buildFilters(sort, constraints.maxWidth),
-                        ],
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  sliver: SliverList.separated(
+                    itemCount: group.value.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 10),
+                    itemBuilder: (context, index) => Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 980),
+                        child: _downloadCard(group.value[index]),
                       ),
                     ),
                   ),
                 ),
-                if (downloadsAsync.hasValue)
-                  ..._buildResults(
-                    constraints: constraints,
-                    horizontal: horizontal,
-                    allDownloads: sorted,
-                  ),
-                const SliverToBoxAdapter(child: SizedBox(height: 40)),
               ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildSummary(List<DownloadItem> downloads) {
-    final active = downloads.where(_isActive).length;
-    final completed = downloads
-        .where((item) => item.status == DownloadStatus.completed)
-        .length;
-    final failed = downloads
-        .where((item) => item.status == DownloadStatus.failed)
-        .length;
-    final bytes = downloads.fold<int>(
-      0,
-      (total, item) => total + (item.fileSize ?? 0),
-    );
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final cardWidth = constraints.maxWidth >= 820
-            ? (constraints.maxWidth - 36) / 4
-            : constraints.maxWidth >= 460
-            ? (constraints.maxWidth - 12) / 2
-            : constraints.maxWidth;
-        return Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: [
-            _SummaryCard(
-              width: cardWidth,
-              icon: Icons.library_add_check_rounded,
-              label: 'All downloads',
-              value: '${downloads.length}',
-            ),
-            _SummaryCard(
-              width: cardWidth,
-              icon: Icons.downloading_rounded,
-              label: 'Active',
-              value: '$active',
-            ),
-            _SummaryCard(
-              width: cardWidth,
-              icon: failed == 0
-                  ? Icons.check_circle_rounded
-                  : Icons.error_outline_rounded,
-              label: '$completed complete • $failed failed',
-              value: _formatBytes(bytes),
-            ),
-            _SummaryCard(
-              width: cardWidth,
-              icon: Icons.collections_bookmark_rounded,
-              label: 'Saved extras',
-              value:
-                  '${downloads.where((item) => item.coverPath != null).length} covers • '
-                  '${downloads.fold<int>(0, (n, item) => n + item.subtitlePaths.length)} subs',
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildFilters(DownloadSortBy sort, double width) {
-    final colors = Theme.of(context).colorScheme;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            TextField(
-              controller: _searchController,
-              onChanged: (_) => setState(() {}),
-              decoration: InputDecoration(
-                prefixIcon: const Icon(Icons.search_rounded),
-                hintText: 'Search title, URL, format, or extension',
-                suffixIcon: _searchController.text.isEmpty
-                    ? null
-                    : IconButton(
-                        tooltip: 'Clear search',
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() {});
-                        },
-                        icon: const Icon(Icons.close_rounded),
-                      ),
-              ),
-            ),
-            const SizedBox(height: 14),
-            Text(
-              'Status',
-              style: Theme.of(
-                context,
-              ).textTheme.labelLarge?.copyWith(color: colors.onSurfaceVariant),
-            ),
-            const SizedBox(height: 7),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final filter in _StatusFilter.values)
-                  FilterChip(
-                    selected: _status == filter,
-                    onSelected: (_) => setState(() => _status = filter),
-                    avatar: Icon(filter.icon, size: 17),
-                    label: Text(filter.label),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final controls = [
-                  DropdownMenu<_DateFilter>(
-                    initialSelection: _date,
-                    expandedInsets: EdgeInsets.zero,
-                    leadingIcon: const Icon(Icons.date_range_rounded),
-                    label: const Text('Date'),
-                    dropdownMenuEntries: [
-                      for (final filter in _DateFilter.values)
-                        DropdownMenuEntry(value: filter, label: filter.label),
-                    ],
-                    onSelected: (value) {
-                      if (value != null) setState(() => _date = value);
-                    },
-                  ),
-                  DropdownMenu<_FileFilter>(
-                    initialSelection: _file,
-                    expandedInsets: EdgeInsets.zero,
-                    leadingIcon: const Icon(Icons.filter_alt_rounded),
-                    label: const Text('File'),
-                    dropdownMenuEntries: [
-                      for (final filter in _FileFilter.values)
-                        DropdownMenuEntry(value: filter, label: filter.label),
-                    ],
-                    onSelected: (value) {
-                      if (value != null) setState(() => _file = value);
-                    },
-                  ),
-                  DropdownMenu<DownloadSortBy>(
-                    initialSelection: sort,
-                    expandedInsets: EdgeInsets.zero,
-                    leadingIcon: const Icon(Icons.sort_rounded),
-                    label: const Text('Sort'),
-                    dropdownMenuEntries: [
-                      for (final value in DownloadSortBy.values)
-                        DropdownMenuEntry(value: value, label: value.label),
-                    ],
-                    onSelected: (value) {
-                      if (value != null) {
-                        ref.read(downloadSortProvider.notifier).setSort(value);
-                      }
-                    },
-                  ),
-                ];
-                if (constraints.maxWidth < 720) {
-                  return Column(
-                    children: [
-                      for (final control in controls) ...[
-                        SizedBox(width: double.infinity, child: control),
-                        const SizedBox(height: 10),
-                      ],
-                    ],
-                  );
-                }
-                return Row(
-                  children: [
-                    for (var index = 0; index < controls.length; index++) ...[
-                      Expanded(child: controls[index]),
-                      if (index != controls.length - 1)
-                        const SizedBox(width: 10),
-                    ],
-                  ],
-                );
-              },
-            ),
+            const SliverToBoxAdapter(child: SizedBox(height: 40)),
           ],
         ),
       ),
     );
   }
 
-  List<Widget> _buildResults({
-    required BoxConstraints constraints,
-    required double horizontal,
-    required List<DownloadItem> allDownloads,
-  }) {
-    final filtered = allDownloads
-        .where(_matchesFilters)
-        .toList(growable: false);
-    final canGrid = constraints.maxWidth >= 760;
-    final useGrid = canGrid && _gridView;
-
-    return [
-      SliverPadding(
-        padding: EdgeInsets.fromLTRB(horizontal, 0, horizontal, 12),
-        sliver: SliverToBoxAdapter(
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '${filtered.length} result${filtered.length == 1 ? '' : 's'}',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-              if (canGrid) ...[
-                IconButton(
-                  tooltip: 'List view',
-                  isSelected: !_gridView,
-                  onPressed: () => setState(() => _gridView = false),
-                  icon: const Icon(Icons.view_agenda_outlined),
-                  selectedIcon: const Icon(Icons.view_agenda_rounded),
-                ),
-                IconButton(
-                  tooltip: 'Grid view',
-                  isSelected: _gridView,
-                  onPressed: () => setState(() => _gridView = true),
-                  icon: const Icon(Icons.grid_view_outlined),
-                  selectedIcon: const Icon(Icons.grid_view_rounded),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-      if (filtered.isEmpty)
-        SliverPadding(
-          padding: EdgeInsets.symmetric(horizontal: horizontal),
-          sliver: SliverToBoxAdapter(
-            child: _EmptyHistory(
-              filtered: allDownloads.isNotEmpty,
-              onClearFilters: _resetFilters,
-              onNewDownload: () => context.go('/home'),
-            ),
-          ),
-        )
-      else if (useGrid)
-        SliverPadding(
-          padding: EdgeInsets.symmetric(horizontal: horizontal),
-          sliver: SliverGrid.builder(
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: constraints.maxWidth >= 1180 ? 3 : 2,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              mainAxisExtent: 382,
-            ),
-            itemCount: filtered.length,
-            itemBuilder: (context, index) =>
-                _downloadCard(filtered[index], grid: true),
-          ),
-        )
-      else
-        SliverPadding(
-          padding: EdgeInsets.symmetric(horizontal: horizontal),
-          sliver: SliverList.separated(
-            itemCount: filtered.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 12),
-            itemBuilder: (context, index) =>
-                SizedBox(height: 220, child: _downloadCard(filtered[index])),
-          ),
-        ),
-    ];
-  }
-
-  Widget _downloadCard(DownloadItem item, {bool grid = false}) {
+  Widget _downloadCard(DownloadItem item) {
     final retryable =
         item.status == DownloadStatus.failed ||
         item.status == DownloadStatus.cancelled;
     return DownloadItemCard(
       item: item,
-      grid: grid,
       onCancel: _isActive(item) ? () => _cancel(item) : null,
       onRetry: retryable ? () => _retry(item) : null,
       onDelete: item.id == null ? null : () => _confirmDelete(item),
     );
+  }
+
+  Map<String, List<DownloadItem>> _groupDownloads(
+    List<DownloadItem> items, {
+    required bool oldestFirst,
+  }) {
+    final collected = <String, List<DownloadItem>>{};
+    for (final item in items) {
+      final label = _dateGroup(item.createdAt);
+      collected.putIfAbsent(label, () => []).add(item);
+    }
+    const newestFirstLabels = <String>[
+      'Today',
+      'Yesterday',
+      'Earlier this week',
+      'This month',
+      'Older',
+    ];
+    final labels = oldestFirst ? newestFirstLabels.reversed : newestFirstLabels;
+    return {
+      for (final label in labels)
+        if (collected[label]?.isNotEmpty == true) label: collected[label]!,
+    };
+  }
+
+  String _dateGroup(DateTime date) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final value = DateTime(date.year, date.month, date.day);
+    final days = today.difference(value).inDays;
+    if (days <= 0) return 'Today';
+    if (days == 1) return 'Yesterday';
+    if (days < 7) return 'Earlier this week';
+    if (date.year == now.year && date.month == now.month) return 'This month';
+    return 'Older';
   }
 
   bool _matchesFilters(DownloadItem item) {
@@ -398,18 +279,20 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
         !item.title.toLowerCase().contains(query) &&
         !item.url.toLowerCase().contains(query) &&
         !(item.formatLabel?.toLowerCase().contains(query) ?? false) &&
+        !(item.quality?.toLowerCase().contains(query) ?? false) &&
         !(item.fileExtension?.toLowerCase().contains(query) ?? false)) {
       return false;
     }
 
-    final statusMatch = switch (_status) {
-      _StatusFilter.all => true,
-      _StatusFilter.active => _isActive(item),
-      _StatusFilter.completed => item.status == DownloadStatus.completed,
-      _StatusFilter.failed => item.status == DownloadStatus.failed,
-      _StatusFilter.cancelled => item.status == DownloadStatus.cancelled,
+    final statusMatches = switch (_status) {
+      _LibraryStatus.all => true,
+      _LibraryStatus.active => _isActive(item),
+      _LibraryStatus.completed => item.status == DownloadStatus.completed,
+      _LibraryStatus.attention =>
+        item.status == DownloadStatus.failed ||
+            item.status == DownloadStatus.cancelled,
     };
-    if (!statusMatch) return false;
+    if (!statusMatches) return false;
 
     final cutoff = switch (_date) {
       _DateFilter.all => null,
@@ -425,18 +308,30 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
     };
     if (cutoff != null && item.createdAt.isBefore(cutoff)) return false;
 
-    return switch (_file) {
-      _FileFilter.all => true,
-      _FileFilter.video =>
-        item.downloadType == 'video' || item.downloadType == 'combined',
-      _FileFilter.audio => item.downloadType == 'audio',
-      _FileFilter.cover => item.coverPath != null,
-      _FileFilter.subtitles => item.subtitlePaths.isNotEmpty,
-      _FileFilter.missing =>
+    final mediaMatches = switch (_media) {
+      _MediaFilter.all => true,
+      _MediaFilter.video =>
+        item.downloadType == 'video' ||
+            item.downloadType == 'combined' ||
+            item.downloadType == 'separate',
+      _MediaFilter.audio => item.downloadType == 'audio',
+    };
+    if (!mediaMatches) return false;
+
+    return switch (_artifact) {
+      _ArtifactFilter.all => true,
+      _ArtifactFilter.cover => item.coverPath != null,
+      _ArtifactFilter.subtitles => item.subtitlePaths.isNotEmpty,
+      _ArtifactFilter.missing =>
         item.status == DownloadStatus.completed &&
             (item.filePath == null || !File(item.filePath!).existsSync()),
     };
   }
+
+  int get _activeFilterCount =>
+      (_date == _DateFilter.all ? 0 : 1) +
+      (_media == _MediaFilter.all ? 0 : 1) +
+      (_artifact == _ArtifactFilter.all ? 0 : 1);
 
   bool _isActive(DownloadItem item) =>
       item.status == DownloadStatus.pending ||
@@ -446,16 +341,108 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
   void _resetFilters() {
     _searchController.clear();
     setState(() {
-      _status = _StatusFilter.all;
+      _status = _LibraryStatus.all;
       _date = _DateFilter.all;
-      _file = _FileFilter.all;
+      _media = _MediaFilter.all;
+      _artifact = _ArtifactFilter.all;
     });
   }
 
+  Future<void> _showFilters() async {
+    var date = _date;
+    var media = _media;
+    var artifact = _artifact;
+    final apply = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheetState) => SafeArea(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(
+              20,
+              0,
+              20,
+              20 + MediaQuery.viewInsetsOf(context).bottom,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Filter downloads',
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                _FilterChoices<_DateFilter>(
+                  title: 'Added',
+                  values: _DateFilter.values,
+                  selected: date,
+                  label: (value) => value.label,
+                  onSelected: (value) => setSheetState(() => date = value),
+                ),
+                const SizedBox(height: 20),
+                _FilterChoices<_MediaFilter>(
+                  title: 'Media',
+                  values: _MediaFilter.values,
+                  selected: media,
+                  label: (value) => value.label,
+                  onSelected: (value) => setSheetState(() => media = value),
+                ),
+                const SizedBox(height: 20),
+                _FilterChoices<_ArtifactFilter>(
+                  title: 'Files and extras',
+                  values: _ArtifactFilter.values,
+                  selected: artifact,
+                  label: (value) => value.label,
+                  onSelected: (value) => setSheetState(() => artifact = value),
+                ),
+                const SizedBox(height: 28),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () {
+                          setSheetState(() {
+                            date = _DateFilter.all;
+                            media = _MediaFilter.all;
+                            artifact = _ArtifactFilter.all;
+                          });
+                        },
+                        child: const Text('Reset'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        child: const Text('Show results'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (apply == true && mounted) {
+      setState(() {
+        _date = date;
+        _media = media;
+        _artifact = artifact;
+      });
+    }
+  }
+
   Future<void> _retry(DownloadItem item) async {
-    if (item.id == null || item.formatId == null) return;
+    if (item.id == null || item.formatId == null) {
+      _message('This older item has no saved format. Inspect the link again.');
+      return;
+    }
     final base = ref.read(ytDlpSettingsProvider);
-    final notifier = ref.read(downloadsProvider.notifier);
     final settings = base.copyWith(
       selectedFormatId: item.formatId,
       downloadType: item.downloadType ?? 'combined',
@@ -463,28 +450,24 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
       downloadThumbnailEnabled: item.coverPath != null,
       downloadSubtitlesEnabled: item.subtitlePaths.isNotEmpty,
     );
-    unawaited(
-      DownloadService.instance
-          .retryDownload(
-            item: item,
-            settings: settings,
-            onUpdate: notifier.updateDownload,
-          )
-          .catchError((Object error, StackTrace stackTrace) {
-            AppLogger.error('Retry failed', error, stackTrace);
-          }),
-    );
+    try {
+      await ref
+          .read(downloadsProvider.notifier)
+          .retryDownload(item: item, settings: settings);
+      _message('Download added to the queue.');
+    } catch (error, stackTrace) {
+      AppLogger.error('Retry could not be queued', error, stackTrace);
+      _message('The download could not be queued. Try again.');
+    }
   }
 
   Future<void> _cancel(DownloadItem item) async {
-    if (item.id == null) return;
-    await DownloadService.instance.cancelDownload(item.id!);
-    final cancelled = item.copyWith(
-      status: DownloadStatus.cancelled,
-      errorMessage: 'Download cancelled by user.',
-      clearCurrentPhase: true,
-    );
-    await ref.read(downloadsProvider.notifier).updateDownload(cancelled);
+    try {
+      await ref.read(downloadsProvider.notifier).cancelDownload(item);
+    } catch (error, stackTrace) {
+      AppLogger.error('Download cancellation failed', error, stackTrace);
+      _message('The download could not be cancelled.');
+    }
   }
 
   Future<void> _confirmDelete(DownloadItem item) async {
@@ -494,21 +477,20 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           icon: const Icon(Icons.delete_outline_rounded),
-          title: const Text('Remove download?'),
+          title: const Text('Remove from Downloads?'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(item.title, maxLines: 2, overflow: TextOverflow.ellipsis),
+              Text(item.title, maxLines: 3, overflow: TextOverflow.ellipsis),
               const SizedBox(height: 12),
               CheckboxListTile(
                 value: deleteFiles,
                 onChanged: (value) =>
                     setDialogState(() => deleteFiles = value ?? false),
-                title: const Text('Delete downloaded files too'),
+                title: const Text('Delete files from the device'),
                 subtitle: const Text(
-                  'Includes the main file, cover, subtitles, and Android '
-                  'published copies.',
+                  'Main media, cover, subtitles, and published Android copies',
                 ),
                 contentPadding: EdgeInsets.zero,
                 controlAffinity: ListTileControlAffinity.leading,
@@ -518,7 +500,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
+              child: const Text('Keep'),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(context, true),
@@ -535,7 +517,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
     if (item.id == null) return;
     try {
       if (_isActive(item)) {
-        await DownloadService.instance.cancelDownload(item.id!);
+        await ref.read(downloadsProvider.notifier).cancelDownload(item);
       }
       if (deleteFiles) {
         final paths = <String>{
@@ -555,7 +537,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
       await ref.read(downloadsProvider.notifier).deleteDownload(item.id!);
     } catch (error, stackTrace) {
       AppLogger.error('Could not remove download', error, stackTrace);
-      if (mounted) _message('Some downloaded files could not be removed.');
+      _message('Some files could not be removed.');
     }
   }
 
@@ -567,18 +549,16 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
     final opened = await DownloadPathService.instance.openDownloadLocation(
       path,
     );
-    if (!opened && mounted) {
-      _message('The download folder could not be opened.');
-    }
+    if (!opened) _message('The download folder could not be opened.');
   }
 
   Future<void> _handleMenuAction(_HistoryMenuAction action) async {
-    final items = ref.read(downloadsProvider).asData?.value ?? const [];
+    final all = ref.read(downloadsProvider).asData?.value ?? const [];
     final targets = action == _HistoryMenuAction.clearCompleted
-        ? items
+        ? all
               .where((item) => item.status == DownloadStatus.completed)
               .toList(growable: false)
-        : items;
+        : List<DownloadItem>.of(all);
     if (targets.isEmpty) {
       _message('There is nothing to clear.');
       return;
@@ -589,20 +569,21 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
+          icon: const Icon(Icons.cleaning_services_outlined),
           title: Text(
             action == _HistoryMenuAction.clearCompleted
-                ? 'Clear completed history?'
-                : 'Clear all history?',
+                ? 'Clear completed downloads?'
+                : 'Clear the whole library?',
           ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('${targets.length} history item(s) will be removed.'),
+              Text('${targets.length} item(s) will be removed from this list.'),
               CheckboxListTile(
                 value: deleteFiles,
                 onChanged: (value) =>
                     setDialogState(() => deleteFiles = value ?? false),
-                title: const Text('Also delete downloaded files'),
+                title: const Text('Also delete files from the device'),
                 contentPadding: EdgeInsets.zero,
                 controlAffinity: ListTileControlAffinity.leading,
               ),
@@ -631,53 +612,340 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
+}
 
-  String _formatBytes(int bytes) {
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    if (bytes < 1024 * 1024 * 1024) {
-      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
-    }
-    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+class _LibraryOverview extends StatelessWidget {
+  const _LibraryOverview({required this.downloads});
+
+  final List<DownloadItem> downloads;
+
+  @override
+  Widget build(BuildContext context) {
+    final active = downloads.where(_isActiveStatus).length;
+    final completed = downloads
+        .where((item) => item.status == DownloadStatus.completed)
+        .length;
+    final attention = downloads
+        .where(
+          (item) =>
+              item.status == DownloadStatus.failed ||
+              item.status == DownloadStatus.cancelled,
+        )
+        .length;
+    final bytes = downloads.fold<int>(
+      0,
+      (total, item) => total + (item.fileSize ?? 0),
+    );
+    return Card.filled(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Row(
+          children: [
+            const CircleAvatar(
+              radius: 25,
+              child: Icon(Icons.video_library_rounded),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '$completed ready · $active active',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    '${downloads.length} total · ${_fileSize(bytes)}'
+                    '${attention == 0 ? '' : ' · $attention need attention'}',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
-enum _HistoryMenuAction { clearCompleted, clearAll }
+class _StatusSelector extends StatelessWidget {
+  const _StatusSelector({
+    required this.selected,
+    required this.downloads,
+    required this.onChanged,
+  });
 
-extension on _StatusFilter {
+  final _LibraryStatus selected;
+  final List<DownloadItem> downloads;
+  final ValueChanged<_LibraryStatus> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (final value in _LibraryStatus.values) ...[
+            FilterChip(
+              selected: selected == value,
+              onSelected: (_) => onChanged(value),
+              avatar: Icon(value.icon, size: 17),
+              label: Text('${value.label} ${_count(value)}'),
+            ),
+            if (value != _LibraryStatus.values.last) const SizedBox(width: 8),
+          ],
+        ],
+      ),
+    );
+  }
+
+  int _count(_LibraryStatus value) => switch (value) {
+    _LibraryStatus.all => downloads.length,
+    _LibraryStatus.active => downloads.where(_isActiveStatus).length,
+    _LibraryStatus.completed =>
+      downloads.where((item) => item.status == DownloadStatus.completed).length,
+    _LibraryStatus.attention =>
+      downloads
+          .where(
+            (item) =>
+                item.status == DownloadStatus.failed ||
+                item.status == DownloadStatus.cancelled,
+          )
+          .length,
+  };
+}
+
+class _LibraryToolbar extends StatelessWidget {
+  const _LibraryToolbar({
+    required this.resultCount,
+    required this.activeFilterCount,
+    required this.sort,
+    required this.onFilters,
+    required this.onSort,
+  });
+
+  final int resultCount;
+  final int activeFilterCount;
+  final DownloadSortBy sort;
+  final VoidCallback onFilters;
+  final ValueChanged<DownloadSortBy> onSort;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            '$resultCount result${resultCount == 1 ? '' : 's'}',
+            style: Theme.of(
+              context,
+            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+          ),
+        ),
+        OutlinedButton.icon(
+          onPressed: onFilters,
+          icon: Badge(
+            isLabelVisible: activeFilterCount > 0,
+            label: Text('$activeFilterCount'),
+            child: const Icon(Icons.filter_alt_outlined),
+          ),
+          label: const Text('Filters'),
+        ),
+        const SizedBox(width: 8),
+        PopupMenuButton<DownloadSortBy>(
+          tooltip: 'Sort downloads',
+          initialValue: sort,
+          onSelected: onSort,
+          itemBuilder: (_) => [
+            for (final value in DownloadSortBy.values)
+              PopupMenuItem(value: value, child: Text(value.label)),
+          ],
+          child: const Padding(
+            padding: EdgeInsets.all(10),
+            child: Icon(Icons.sort_rounded),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _FilterChoices<T> extends StatelessWidget {
+  const _FilterChoices({
+    required this.title,
+    required this.values,
+    required this.selected,
+    required this.label,
+    required this.onSelected,
+  });
+
+  final String title;
+  final List<T> values;
+  final T selected;
+  final String Function(T value) label;
+  final ValueChanged<T> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: Theme.of(context).textTheme.titleSmall),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final value in values)
+              ChoiceChip(
+                selected: value == selected,
+                onSelected: (_) => onSelected(value),
+                label: Text(label(value)),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _EmptyLibrary extends StatelessWidget {
+  const _EmptyLibrary({
+    required this.hasDownloads,
+    required this.onReset,
+    required this.onDownload,
+  });
+
+  final bool hasDownloads;
+  final VoidCallback onReset;
+  final VoidCallback onDownload;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(36),
+        child: Column(
+          children: [
+            Icon(
+              hasDownloads
+                  ? Icons.filter_alt_off_rounded
+                  : Icons.download_done_rounded,
+              size: 58,
+            ),
+            const SizedBox(height: 14),
+            Text(
+              hasDownloads
+                  ? 'Nothing matches this view'
+                  : 'Your downloads will appear here',
+              style: Theme.of(context).textTheme.titleLarge,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              hasDownloads
+                  ? 'Clear the search or filters to see the rest of your library.'
+                  : 'Add a media link from Home to get started.',
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 18),
+            FilledButton.icon(
+              onPressed: hasDownloads ? onReset : onDownload,
+              icon: Icon(
+                hasDownloads
+                    ? Icons.filter_alt_off_rounded
+                    : Icons.add_link_rounded,
+              ),
+              label: Text(hasDownloads ? 'Reset view' : 'New download'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LoadError extends StatelessWidget {
+  const _LoadError({required this.onRetry});
+
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: ListTile(
+        leading: const Icon(Icons.error_outline_rounded),
+        title: const Text('Downloads could not be loaded'),
+        subtitle: const Text('Your files were not changed.'),
+        trailing: IconButton(
+          tooltip: 'Retry',
+          onPressed: onRetry,
+          icon: const Icon(Icons.refresh_rounded),
+        ),
+      ),
+    );
+  }
+}
+
+bool _isActiveStatus(DownloadItem item) =>
+    item.status == DownloadStatus.pending ||
+    item.status == DownloadStatus.processing ||
+    item.status == DownloadStatus.downloading;
+
+String _fileSize(int bytes) {
+  if (bytes < 1024) return '$bytes B';
+  if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+  if (bytes < 1024 * 1024 * 1024) {
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+  return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+}
+
+extension on _LibraryStatus {
   String get label => switch (this) {
-    _StatusFilter.all => 'All',
-    _StatusFilter.active => 'Active',
-    _StatusFilter.completed => 'Completed',
-    _StatusFilter.failed => 'Failed',
-    _StatusFilter.cancelled => 'Cancelled',
+    _LibraryStatus.all => 'All',
+    _LibraryStatus.active => 'Active',
+    _LibraryStatus.completed => 'Ready',
+    _LibraryStatus.attention => 'Attention',
   };
 
   IconData get icon => switch (this) {
-    _StatusFilter.all => Icons.all_inbox_rounded,
-    _StatusFilter.active => Icons.downloading_rounded,
-    _StatusFilter.completed => Icons.check_circle_outline_rounded,
-    _StatusFilter.failed => Icons.error_outline_rounded,
-    _StatusFilter.cancelled => Icons.cancel_outlined,
+    _LibraryStatus.all => Icons.all_inbox_rounded,
+    _LibraryStatus.active => Icons.downloading_rounded,
+    _LibraryStatus.completed => Icons.check_circle_outline_rounded,
+    _LibraryStatus.attention => Icons.error_outline_rounded,
   };
 }
 
 extension on _DateFilter {
   String get label => switch (this) {
-    _DateFilter.all => 'Any date',
+    _DateFilter.all => 'Any time',
     _DateFilter.today => 'Today',
     _DateFilter.last7Days => 'Last 7 days',
     _DateFilter.last30Days => 'Last 30 days',
   };
 }
 
-extension on _FileFilter {
+extension on _MediaFilter {
   String get label => switch (this) {
-    _FileFilter.all => 'Any file',
-    _FileFilter.video => 'Video',
-    _FileFilter.audio => 'Audio',
-    _FileFilter.cover => 'Has cover',
-    _FileFilter.subtitles => 'Has subtitles',
-    _FileFilter.missing => 'Missing file',
+    _MediaFilter.all => 'Any media',
+    _MediaFilter.video => 'Video',
+    _MediaFilter.audio => 'Audio',
+  };
+}
+
+extension on _ArtifactFilter {
+  String get label => switch (this) {
+    _ArtifactFilter.all => 'Any files',
+    _ArtifactFilter.cover => 'Has cover',
+    _ArtifactFilter.subtitles => 'Has subtitles',
+    _ArtifactFilter.missing => 'Missing main file',
   };
 }
 
@@ -690,133 +958,4 @@ extension on DownloadSortBy {
     DownloadSortBy.sizeSmallest => 'Smallest first',
     DownloadSortBy.sizeLargest => 'Largest first',
   };
-}
-
-class _SummaryCard extends StatelessWidget {
-  const _SummaryCard({
-    required this.width,
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
-
-  final double width;
-  final IconData icon;
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return SizedBox(
-      width: width,
-      child: Card.filled(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              CircleAvatar(
-                backgroundColor: colors.secondaryContainer,
-                foregroundColor: colors.onSecondaryContainer,
-                child: Icon(icon),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      value,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: colors.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _EmptyHistory extends StatelessWidget {
-  const _EmptyHistory({
-    required this.filtered,
-    required this.onClearFilters,
-    required this.onNewDownload,
-  });
-
-  final bool filtered;
-  final VoidCallback onClearFilters;
-  final VoidCallback onNewDownload;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(36),
-        child: Column(
-          children: [
-            Icon(
-              filtered
-                  ? Icons.filter_alt_off_rounded
-                  : Icons.download_done_rounded,
-              size: 58,
-            ),
-            const SizedBox(height: 14),
-            Text(
-              filtered
-                  ? 'No downloads match these filters'
-                  : 'No downloads yet',
-              style: Theme.of(context).textTheme.titleLarge,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 14),
-            FilledButton.icon(
-              onPressed: filtered ? onClearFilters : onNewDownload,
-              icon: Icon(
-                filtered
-                    ? Icons.filter_alt_off_rounded
-                    : Icons.add_link_rounded,
-              ),
-              label: Text(filtered ? 'Clear filters' : 'Start a download'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ErrorPanel extends StatelessWidget {
-  const _ErrorPanel({required this.onRetry});
-
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: ListTile(
-        leading: const Icon(Icons.error_outline_rounded),
-        title: const Text('History could not be loaded'),
-        trailing: IconButton(
-          onPressed: onRetry,
-          icon: const Icon(Icons.refresh_rounded),
-        ),
-      ),
-    );
-  }
 }

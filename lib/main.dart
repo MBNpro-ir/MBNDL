@@ -19,6 +19,7 @@ import 'services/storage/cookie_storage_service.dart';
 import 'services/storage/settings_storage_service.dart';
 import 'services/storage/storage_service.dart';
 import 'shared/providers/settings_provider.dart';
+import 'shared/providers/app_update_provider.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -87,6 +88,8 @@ class _MBNDownloaderAppState extends ConsumerState<MBNDownloaderApp>
   late _StartupPhase _phase;
   bool _closePromptVisible = false;
   bool _isQuitting = false;
+  bool _appUpdaterStarted = false;
+  String? _promptedUpdateVersion;
 
   @override
   void initState() {
@@ -245,7 +248,7 @@ class _MBNDownloaderAppState extends ConsumerState<MBNDownloaderApp>
 
   Future<void> _checkPermissions() async {
     if (!Platform.isAndroid) {
-      if (mounted) setState(() => _phase = _StartupPhase.ready);
+      _enterReady();
       return;
     }
 
@@ -258,17 +261,96 @@ class _MBNDownloaderAppState extends ConsumerState<MBNDownloaderApp>
         ) ??
         false;
     if (!mounted) return;
-    setState(
-      () => _phase = permissions && onboardingComplete
-          ? _StartupPhase.ready
-          : _StartupPhase.permissions,
+    if (permissions && onboardingComplete) {
+      _enterReady();
+    } else {
+      setState(() => _phase = _StartupPhase.permissions);
+    }
+  }
+
+  void _enterReady() {
+    if (!mounted) return;
+    setState(() => _phase = _StartupPhase.ready);
+    _startApplicationUpdater();
+  }
+
+  void _startApplicationUpdater() {
+    if (widget.skipStartupChecks || _appUpdaterStarted) return;
+    _appUpdaterStarted = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(ref.read(appUpdateProvider.notifier).startAutomaticCheck());
+    });
+  }
+
+  Future<void> _showApplicationUpdate(AppUpdateState update) async {
+    final release = update.release;
+    if (release == null || _promptedUpdateVersion == release.version) return;
+    final dialogContext = rootNavigatorKey.currentContext;
+    if (dialogContext == null) return;
+    _promptedUpdateVersion = release.version;
+
+    final install = await showDialog<bool>(
+      context: dialogContext,
+      builder: (context) => AlertDialog(
+        icon: const Icon(Icons.system_update_alt_rounded),
+        title: Text('MBNDL ${release.version} is ready'),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520, maxHeight: 360),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  Platform.isWindows
+                      ? 'The update has downloaded. MBNDL will close, update, and reopen automatically.'
+                      : 'The update has downloaded. Android will ask you to confirm installation.',
+                ),
+                if (release.notes.trim().isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  Text(
+                    'What’s new',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(release.notes.trim()),
+                ],
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Later'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(context, true),
+            icon: const Icon(Icons.install_mobile_rounded),
+            label: const Text('Install'),
+          ),
+        ],
+      ),
     );
+    if (install == true && mounted) {
+      await ref.read(appUpdateProvider.notifier).installUpdate();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final mode = ref.watch(themeModeProvider);
     final color = ref.watch(themeColorProvider);
+    ref.listen<AppUpdateState>(appUpdateProvider, (previous, next) {
+      if (_phase == _StartupPhase.ready &&
+          next.stage == AppUpdateStage.ready &&
+          previous?.packagePath != next.packagePath) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) unawaited(_showApplicationUpdate(next));
+        });
+      }
+    });
 
     return DynamicColorBuilder(
       builder: (lightDynamic, darkDynamic) {
@@ -295,7 +377,7 @@ class _MBNDownloaderAppState extends ConsumerState<MBNDownloaderApp>
             _StartupPhase.checking => const _StartupSurface(),
             _StartupPhase.permissions => PermissionRequestPage(
               onPermissionGranted: () {
-                setState(() => _phase = _StartupPhase.ready);
+                _enterReady();
               },
             ),
             _StartupPhase.ready => routerChild ?? const SizedBox.shrink(),

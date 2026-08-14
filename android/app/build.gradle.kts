@@ -4,6 +4,17 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+val releaseKeystorePath = System.getenv("MBNDL_KEYSTORE_PATH")
+val releaseKeystorePassword = System.getenv("MBNDL_KEYSTORE_PASSWORD")
+val releaseKeyAlias = System.getenv("MBNDL_KEY_ALIAS")
+val releaseKeyPassword = System.getenv("MBNDL_KEY_PASSWORD")
+val hasReleaseSigning = listOf(
+    releaseKeystorePath,
+    releaseKeystorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword
+).all { !it.isNullOrBlank() }
+
 android {
     namespace = "com.mbn.dl"
     compileSdk = 37
@@ -49,11 +60,27 @@ android {
         }
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(releaseKeystorePath!!)
+                storePassword = releaseKeystorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // CI releases use a persistent private key so future in-app APK
+            // upgrades keep the same Android signing identity. Local release
+            // builds fall back to the debug key when these variables are absent.
+            signingConfig = if (hasReleaseSigning) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
 
             // Enable code shrinking, obfuscation, and optimization
             isMinifyEnabled = true

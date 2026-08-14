@@ -55,9 +55,19 @@ MBNDL uses Android’s secure MediaStore API on Android 10 and newer. It does **
 - **Smart merge** — select exactly one video and one audio stream, then enable this option to create one playable file with FFmpeg.
 - **Save cover / Save subtitles** — keep these artifacts with the download and expose them in History.
 
-### 🗂️ History and troubleshooting
+### 🔄 Application updates
 
-History supports search, status filters, date filters, file/artifact filters, sorting, grid/list views, retry, cancel, open, share, and coordinated deletion of the main file and related artifacts.
+On Android and Windows, MBNDL checks GitHub Releases after startup and can download the correct package without blocking normal use. When it is ready, MBNDL asks before installation. Both automatic checks and background downloads can be changed under **Settings → App Updates**.
+
+- Android automatically chooses ARM32 or ARM64, then opens Android’s standard package installer.
+- Windows uses the bundled `updater.exe` beside `MBNDL.exe`, safely waits for MBNDL to close, replaces the extracted bundle, and reopens the app.
+- Downloaded release assets are checked against GitHub’s SHA-256 digest when available.
+
+> Android users upgrading from `1.0.0` must uninstall that version and install `1.0.1` once because `1.0.0` was produced with an ephemeral development certificate. Releases from `1.0.1` onward use a persistent signing identity and support normal in-place updates.
+
+### 🗂️ Downloads library and troubleshooting
+
+The Downloads library uses a mobile-first grouped list with clear **All**, **Active**, **Ready**, and **Attention** views. Search, date/media/artifact filters, sorting, retry, cancel, open, share, missing-file detection, and coordinated deletion are available without crowding every card. Tap an item for its source, codecs, cover, subtitles, related files, and full error details.
 
 If a download fails, MBNDL translates common yt-dlp/FFmpeg output into an actionable message—for example: authentication required, rate limited, unsupported URL, missing format, storage full, network failure, or FFmpeg merge failure.
 
@@ -89,12 +99,22 @@ MBNDL یک دانلود منیجر ساده و مدرن بر پایهٔ yt-dlp �
 
 در اندروید ۱۰ به بالا برنامه از MediaStore استفاده می‌کند و به مجوز خطرناک دسترسی به تمام فایل‌ها نیازی ندارد. فقط در اندروید ۹ و قدیمی‌تر مجوز قدیمی Storage درخواست می‌شود.
 
+### 🔄 آپدیت خودکار برنامه
+
+در ویندوز و اندروید، MBNDL بعد از اجرا Release جدید را بدون متوقف‌کردن کار شما بررسی و فایل مناسب دستگاه را در پس‌زمینه آماده می‌کند. پس از کامل‌شدن دانلود، نصب فقط با تأیید شما شروع می‌شود. این رفتار از مسیر **Settings → App Updates** قابل تغییر است.
+
+- در اندروید نسخهٔ ARM32 یا ARM64 به‌طور خودکار انتخاب و نصب‌کنندهٔ رسمی Android باز می‌شود.
+- در ویندوز فایل `updater.exe` کنار برنامه قرار دارد؛ منتظر بسته‌شدن MBNDL می‌ماند، فایل‌ها را جایگزین می‌کند و برنامه را دوباره باز می‌کند.
+- در صورت وجود Digest رسمی GitHub، صحت SHA-256 فایل دانلودشده بررسی می‌شود.
+
+> برای عبور از نسخهٔ `1.0.0` در اندروید، فقط همین یک بار باید نسخهٔ قبلی را حذف و `1.0.1` را نصب کنید؛ نسخهٔ قبلی با گواهی توسعهٔ موقت ساخته شده بود. از `1.0.1` به بعد امضای ثابت است و آپدیت مستقیم روی نسخهٔ نصب‌شده انجام می‌شود.
+
 ### 🎚️ انتخاب کیفیت و تاریخچه
 
 - در تب **Ready to play** خروجی‌های آمادهٔ پخش را انتخاب کنید.
 - در تب‌های **Video** و **Audio** می‌توانید چند گزینه را هم‌زمان انتخاب کنید.
 - برای ساخت یک فایل نهایی از یک ویدئو و یک صدا، گزینهٔ **Smart merge** را فعال کنید.
-- صفحهٔ History دارای جست‌وجو، فیلتر تاریخ، وضعیت و نوع فایل، مرتب‌سازی، نمای لیستی/شبکه‌ای، Retry، Cancel، Share و نمایش کاور و زیرنویس است.
+- صفحهٔ Downloads دارای نمای ساده و گروه‌بندی‌شده، جست‌وجو، فیلتر تاریخ/وضعیت/نوع فایل، مرتب‌سازی، Retry، Cancel، Share، تشخیص فایل حذف‌شده و نمایش کاور و زیرنویس است.
 - خطاهای رایج yt-dlp و FFmpeg با متن قابل‌فهم و راه‌حل پیشنهادی نمایش داده می‌شوند.
 
 </div>
@@ -110,7 +130,8 @@ MBNDL یک دانلود منیجر ساده و مدرن بر پایهٔ yt-dlp �
 | UI | Flutter Material 3 / Material You |
 | State | Riverpod |
 | Navigation | GoRouter |
-| History | SQLite (`sqflite` / `sqflite_common_ffi`) |
+| Downloads library | SQLite (`sqflite` / `sqflite_common_ffi`) |
+| App updates | GitHub Releases API, SHA-256 verification, Android installer, Windows sidecar |
 | Windows downloads | Official standalone yt-dlp + minimal FFmpeg/FFprobe bootstrap |
 | Android downloads | `youtubedl-android`, foreground service, and MediaStore publication |
 | Application ID | `com.mbn.dl` |
@@ -120,7 +141,7 @@ MBNDL یک دانلود منیجر ساده و مدرن بر پایهٔ yt-dlp �
 1. The app validates the URL and ensures the local download tools are ready.
 2. yt-dlp extracts metadata and formats using the active proxy, cookies, and JavaScript-runtime settings.
 3. The full-screen picker returns one or more independent download jobs.
-4. Each job is persisted to SQLite before execution, so progress and failures remain visible.
+4. Each job is persisted to SQLite, then consumed by a reliable serial queue. A job always moves from Queued to Preparing or to a stored actionable failure.
 5. yt-dlp downloads the selected stream; FFmpeg merges or post-processes only when required.
 6. MBNDL discovers the output, cover, and subtitle files and saves those relationships in History.
 7. Android copies completed artifacts into `Downloads/MBNDL` through MediaStore.
@@ -133,6 +154,12 @@ Windows-only tools are installed by CMake under `data/tools`; they are not added
 - The packaged FFmpeg archive contains only `ffmpeg.exe`, `ffprobe.exe`, and upstream notices.
 - The FFmpeg updater reads the remote ZIP directory and uses HTTP Range requests to fetch only those two executables instead of downloading the complete distribution.
 - yt-dlp updates support stable, nightly, and master channels and verify the upstream digest when one is supplied.
+
+### Application updater and signing
+
+`lib/services/updater/` selects assets from the latest GitHub Release and verifies their published digest. Android exposes install permission and a content URI through a dedicated platform channel and `FileProvider`. Windows builds `windows/updater/main.cpp` as `updater.exe` and installs it beside the main executable.
+
+Android CI releases must provide `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD` repository secrets. The workflow converts them into the `MBNDL_*` environment expected by Gradle; signing material is never committed.
 
 Refresh the Windows bootstrap assets from the project root:
 
@@ -158,8 +185,10 @@ flutter build apk --release --split-per-abi --target-platform android-arm,androi
 lib/features/home/                 Home and full-screen format selection
 lib/features/history/              Searchable download library and artifact UI
 lib/services/downloader/           yt-dlp, FFmpeg, native Android bridge
+lib/services/updater/              GitHub release check, download, verification, install
 lib/services/permissions/          First-run permission contract
 android/app/src/main/kotlin/       Foreground download and MediaStore publication
+windows/updater/                   Native Windows sidecar updater
 tool/refresh_windows_bootstrap.dart Minimal FFmpeg bootstrap refresher
 .github/workflows/release.yml       Tagged Windows/Android release pipeline
 ```
