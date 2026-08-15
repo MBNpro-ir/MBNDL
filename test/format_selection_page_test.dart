@@ -171,4 +171,43 @@ void main() {
     expect(find.text('VP9 • WEBM'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('multilingual audio shows country flag, code, and stream facts', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 820);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    const format = VideoFormat(
+      formatId: '251-en-gb',
+      ext: 'webm',
+      acodec: 'opus',
+      abr: 128,
+      language: 'en-GB',
+      audioChannels: 2,
+      audioSampleRate: 48000,
+      protocol: 'https',
+      formatNote: 'original',
+      hasAudio: true,
+    );
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: FormatSelectionPage(
+          formats: [format],
+          videoTitle: 'Multilingual audio',
+        ),
+      ),
+    );
+    await tester.tap(find.text('Audio (0)'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('🇬🇧 EN-GB'), findsOneWidget);
+    expect(find.text('Stereo · 2 ch'), findsOneWidget);
+    expect(find.text('48 kHz'), findsOneWidget);
+    expect(find.text('HTTPS'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }

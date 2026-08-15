@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../core/utils/floating_navigation_insets.dart';
+import '../../../core/notifications/app_notification.dart';
 import '../../../services/storage/cookie_storage_service.dart';
 import '../../../shared/models/cookie_item.dart';
 import '../../../shared/providers/cookie_provider.dart';
@@ -102,12 +103,11 @@ class _CookieManagerPageState extends ConsumerState<CookieManagerPage> {
 
   void _message(String text, {bool error = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(text),
-        backgroundColor: error ? Theme.of(context).colorScheme.error : null,
-        showCloseIcon: true,
-      ),
+    AppNotificationCenter.show(
+      context,
+      kind: error ? AppNotificationKind.error : AppNotificationKind.success,
+      title: error ? 'YouTube account needs attention' : 'YouTube account',
+      message: text,
     );
   }
 
@@ -304,10 +304,15 @@ class _CookieManagerPageState extends ConsumerState<CookieManagerPage> {
           ),
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: canAdd ? _import : null,
-        icon: const Icon(Icons.person_add_alt_1_rounded),
-        label: Text(canAdd ? 'Import account' : '3 accounts saved'),
+      floatingActionButton: Padding(
+        padding: EdgeInsets.only(
+          bottom: floatingNavigationScrollClearance(context),
+        ),
+        child: FloatingActionButton.extended(
+          onPressed: canAdd ? _import : null,
+          icon: const Icon(Icons.person_add_alt_1_rounded),
+          label: Text(canAdd ? 'Import account' : '3 accounts saved'),
+        ),
       ),
     );
   }

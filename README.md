@@ -78,7 +78,7 @@ yt-dlp no longer supports YouTube OAuth. Android and Windows also prevent one ap
 
 ### 🔄 Application updates
 
-On Android and Windows, MBNDL checks GitHub Releases after startup and can download the correct package without blocking normal use. When it is ready, MBNDL asks before installation. Both automatic checks and background downloads can be changed under **Settings → App Updates**.
+On Android and Windows, MBNDL checks GitHub Releases after startup and can download the correct package without blocking normal use. When it is ready, an animated in-app notification opens the focused **Settings → App Updates** controls, where installation remains an explicit user choice. Both automatic checks and background downloads can be changed there.
 
 - Android automatically chooses ARM32 or ARM64, then opens Android’s standard package installer.
 - Windows uses the bundled `updater.exe` beside `MBNDL.exe`, safely waits for MBNDL to close, replaces the extracted bundle, and reopens the app.
@@ -88,7 +88,7 @@ On Android and Windows, MBNDL checks GitHub Releases after startup and can downl
 
 ### ✨ Appearance, backups, and diagnostics
 
-**Settings → Appearance** offers the aqua Material 3 Expressive design, Material You dynamic colors, light/dark/AMOLED modes, floating navigation, and System/Full/Reduced motion choices. Page cards and controls remain visible while scrolling behind the floating capsule, where a short fade preserves contrast; a transparent tail exists only at the end of the scroll so the final action can stop above the bar. With Liquid Glass disabled, the compact Material capsule stays translucent without optical effects. Optional **Liquid Glass (Beta)** is deliberately limited to the bottom navigation: Android Impeller uses a GPU fragment shader for live refraction, lens magnification, optical borders, chromatic dispersion, adaptive tint, and a morphing selection pill; Windows uses the stable single-lens Skia fallback. Page surfaces remain ordinary readable Material. This is a portable Flutter interpretation inspired by [Apple’s Liquid Glass design language](https://developer.apple.com/documentation/technologyoverviews/liquid-glass), not Apple’s private renderer. Efficient or Adaptive quality is recommended on older phones.
+**Settings → Appearance** offers the aqua Material 3 Expressive design, Material You dynamic colors, light/dark/AMOLED modes, floating navigation, and System/Full/Reduced motion choices. Page cards and controls remain visible while scrolling behind the floating capsule, where a short fade preserves contrast; a transparent tail exists only at the end of the scroll so the final action can stop above the bar. With Liquid Glass disabled, the compact Material capsule stays translucent without optical effects. Optional **Liquid Glass (Beta)** is deliberately limited to the bottom navigation: Android Impeller uses a GPU fragment shader for live refraction, lens magnification, optical borders, chromatic dispersion, adaptive tint, and a morphing selection pill; Windows uses the stable single-lens Skia fallback. Page surfaces remain ordinary readable Material. This is a portable Flutter interpretation inspired by [Apple’s Liquid Glass design language](https://developer.apple.com/documentation/technologyoverviews/liquid-glass), not Apple’s private renderer. Rendering quality is selected automatically for the current platform.
 
 Settings backups now use a versioned schema and include yt-dlp settings, Quick Presets/custom presets, appearance, close behavior, log detail, and app-update preferences. YouTube cookies, proxy credentials, history, permissions, device paths, and free-form command arguments remain local for safety. Imports are validated before any value is written and take effect immediately.
 
@@ -96,7 +96,9 @@ Application logs are stored as one structured event per line. The selected **Log
 
 ### 🗂️ Downloads library and troubleshooting
 
-The Downloads library uses a mobile-first grouped list with clear **All**, **Active**, **Ready**, and **Attention** views. Search, date/media/artifact filters, sorting, retry, cancel, open, share, missing-file detection, and coordinated deletion are available without crowding every card. Select one or several entries to retry, cancel, or remove them together. Tap an item for its source, codecs, cover, subtitles, related files, and full error details.
+The Downloads library uses a mobile-first grouped list with clear **All**, **Active**, **Ready**, and **Attention** views. Search, date/media/artifact filters, sorting, retry, cancel, open, share, missing-file detection, and coordinated deletion are available without crowding every card. Select one or several entries to retry, cancel, or remove them together. Tap an item for its source, format ID, quality, container, resolved file size, codecs, elapsed time, exact saved paths, cover, subtitles, related files, and full error details.
+
+The format picker groups video choices by simple resolution and audio choices by bitrate, while retaining yt-dlp’s technical metadata. Exact dimensions, estimated/exact size, FPS, bitrates, HDR/dynamic range, protocol, sample rate, channel layout, format notes, and raw codec IDs are visible before downloading. Multilingual YouTube audio shows a flag and yt-dlp’s exact language/region code so the intended track can be selected.
 
 If a download fails, MBNDL translates common yt-dlp/FFmpeg output into an actionable message—for example: authentication required, rate limited, unsupported URL, missing format, storage full, network failure, or FFmpeg merge failure.
 
@@ -139,7 +141,7 @@ MBNDL یک دانلود منیجر ساده و مدرن بر پایهٔ yt-dlp �
 
 ### 🔄 آپدیت خودکار برنامه
 
-در ویندوز و اندروید، MBNDL بعد از اجرا Release جدید را بدون متوقف‌کردن کار شما بررسی و فایل مناسب دستگاه را در پس‌زمینه آماده می‌کند. پس از کامل‌شدن دانلود، نصب فقط با تأیید شما شروع می‌شود. این رفتار از مسیر **Settings → App Updates** قابل تغییر است.
+در ویندوز و اندروید، MBNDL بعد از اجرا Release جدید را بدون متوقف‌کردن کار شما بررسی و فایل مناسب دستگاه را در پس‌زمینه آماده می‌کند. پس از کامل‌شدن دانلود، یک اعلان متحرک داخل برنامه نمایش داده می‌شود و با لمس آن مستقیماً بخش **Settings → App Updates** باز می‌شود؛ نصب همچنان فقط با تأیید شما شروع می‌شود.
 
 - در اندروید نسخهٔ ARM32 یا ARM64 به‌طور خودکار انتخاب و نصب‌کنندهٔ رسمی Android باز می‌شود.
 - در ویندوز فایل `updater.exe` کنار برنامه قرار دارد؛ منتظر بسته‌شدن MBNDL می‌ماند، فایل‌ها را جایگزین می‌کند و برنامه را دوباره باز می‌کند.
@@ -151,6 +153,7 @@ MBNDL یک دانلود منیجر ساده و مدرن بر پایهٔ yt-dlp �
 
 - در تب **Ready to play** خروجی‌های آمادهٔ پخش را انتخاب کنید.
 - در تب‌های **Video** و **Audio** می‌توانید چند گزینه را هم‌زمان انتخاب کنید.
+- برای صداهای چندزبانهٔ YouTube، پرچم و کد دقیق زبان/ناحیه کنار هر ترک نمایش داده می‌شود. ابعاد دقیق، حجم واقعی یا تخمینی، Bitrate، FPS، HDR، کانال و Sample Rate صدا، پروتکل و کدک کامل نیز پیش از دانلود قابل مشاهده‌اند.
 - برای ساخت یک فایل نهایی از یک ویدئو و یک صدا، گزینهٔ **Smart merge** را فعال کنید.
 - صفحهٔ Downloads دارای نمای ساده و گروه‌بندی‌شده، جست‌وجو، فیلتر تاریخ/وضعیت/نوع فایل، مرتب‌سازی، Retry، Cancel، Share، تشخیص فایل حذف‌شده و نمایش کاور و زیرنویس است.
 - با حالت انتخاب چندتایی می‌توانید چند دانلود را با هم Retry، Cancel یا همراه فایل‌های وابسته حذف کنید.
@@ -161,7 +164,9 @@ MBNDL یک دانلود منیجر ساده و مدرن بر پایهٔ yt-dlp �
 
 ### ✨ ظاهر، بکاپ و لاگ
 
-در مسیر **Settings → Appearance** طراحی آبی‌آکوا Material 3 Expressive، رنگ پویا Material You، حالت روشن/تیره/AMOLED، نوار شناور و انتخاب‌های System/Full/Reduced Motion در دسترس است. کارت‌ها و کنترل‌های صفحه هنگام اسکرول پشت کپسول شناور دیده می‌شوند و Fade کوتاه خوانایی را حفظ می‌کند؛ فقط انتهای اسکرول یک Tail شفاف دارد تا آخرین ردیف بتواند کاملاً بالای نوار بایستد. با خاموش بودن Liquid Glass نیز کپسول Material جمع‌وجور و نیمه‌شفاف باقی می‌ماند، اما افکت اپتیکی ندارد. گزینهٔ آزمایشی **Liquid Glass** عمداً فقط روی نوار پایین موبایل اعمال می‌شود؛ Android/Impeller با Fragment Shader شکست زنده، بزرگ‌نمایی لنزی، لبهٔ نوری، جدایش رنگ، Tint تطبیقی و Pill مورف‌شونده را می‌سازد و Windows از renderer تک‌لنز پایدار Skia استفاده می‌کند. سطح صفحه‌ها همچنان Material خوانا باقی می‌ماند. این پیاده‌سازی قابل‌حمل با الهام از [زبان طراحی Liquid Glass اپل](https://developer.apple.com/documentation/technologyoverviews/liquid-glass) است و موتور خصوصی اپل نیست. برای گوشی‌های قدیمی حالت Adaptive یا Efficient پیشنهاد می‌شود.
+در مسیر **Settings → Appearance** طراحی آبی‌آکوا Material 3 Expressive، رنگ پویا Material You، حالت روشن/تیره/AMOLED، نوار شناور و انتخاب‌های System/Full/Reduced Motion در دسترس است. کارت‌ها و کنترل‌های صفحه هنگام اسکرول پشت کپسول شناور دیده می‌شوند و Fade کوتاه خوانایی را حفظ می‌کند؛ فقط انتهای اسکرول یک Tail شفاف دارد تا آخرین ردیف بتواند کاملاً بالای نوار بایستد. با خاموش بودن Liquid Glass نیز کپسول Material جمع‌وجور و نیمه‌شفاف باقی می‌ماند، اما افکت اپتیکی ندارد. گزینهٔ آزمایشی **Liquid Glass** عمداً فقط روی نوار پایین موبایل اعمال می‌شود؛ Android/Impeller با Fragment Shader شکست زنده، بزرگ‌نمایی لنزی، لبهٔ نوری، جدایش رنگ، Tint تطبیقی و Pill مورف‌شونده را می‌سازد و Windows از renderer تک‌لنز پایدار Skia استفاده می‌کند. سطح صفحه‌ها همچنان Material خوانا باقی می‌ماند. این پیاده‌سازی قابل‌حمل با الهام از [زبان طراحی Liquid Glass اپل](https://developer.apple.com/documentation/technologyoverviews/liquid-glass) است و موتور خصوصی اپل نیست. کیفیت رندر به‌طور خودکار براساس پلتفرم انتخاب می‌شود و گزینهٔ دستی بی‌اثر حذف شده است.
+
+همهٔ اعلان‌های داخل برنامه برای رویدادهای دانلود، خطا، تنظیمات و آپدیت ظاهر یکپارچه، انیمیشن رفت‌وبرگشت و فاصلهٔ امن از نوار پایین دارند؛ بنابراین دیگر پشت سه دکمهٔ اصلی پنهان نمی‌شوند.
 
 Export نسخه‌بندی‌شدهٔ تنظیمات حالا تنظیمات yt-dlp، پریست‌ها، ظاهر، رفتار بستن ویندوز، سطح لاگ و آپدیتر را همگام نگه می‌دارد. کوکی‌های YouTube، رمز پروکسی، History، Permission، مسیرهای مخصوص دستگاه و آرگومان‌های آزاد عمداً منتقل نمی‌شوند. Import پیش از نوشتن کامل بررسی می‌شود و تغییرات بلافاصله اعمال می‌شوند.
 

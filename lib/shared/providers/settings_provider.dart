@@ -65,6 +65,9 @@ final appearanceSettingsProvider =
     );
 
 class AppearanceSettingsNotifier extends Notifier<AppAppearanceSettings> {
+  static const _liquidDefaultsMigrationKey =
+      'liquid_glass_v107_defaults_applied';
+
   @override
   AppAppearanceSettings build() {
     final storage = StorageService.instance;
@@ -76,31 +79,34 @@ class AppearanceSettingsNotifier extends Notifier<AppAppearanceSettings> {
           ? AppSurfaceStyle.liquidGlass.index
           : AppSurfaceStyle.expressive.index,
     );
-    return AppAppearanceSettings(
-      surfaceStyle:
-          AppSurfaceStyle.values.elementAtOrNull(styleIndex ?? 0) ??
-          AppSurfaceStyle.expressive,
-      glassQuality:
-          GlassQuality.values.elementAtOrNull(
-            storage.getInt(
-                  'glass_quality',
-                  defaultValue: GlassQuality.adaptive.index,
-                ) ??
-                GlassQuality.adaptive.index,
-          ) ??
-          GlassQuality.adaptive,
-      glassBlur: storage.getDouble('glass_blur', defaultValue: 18) ?? 18,
-      glassOpacity:
-          storage.getDouble('glass_opacity', defaultValue: 0.64) ?? 0.64,
-      glassVibrancy:
-          storage.getDouble('glass_vibrancy', defaultValue: 0.55) ?? 0.55,
-      glassRefraction:
-          storage.getDouble('glass_refraction', defaultValue: 0.42) ?? 0.42,
-      chromaticAberration:
-          storage.getBool('glass_chromatic_aberration', defaultValue: true) ??
-          true,
-      depthEffect:
-          storage.getBool('glass_depth_effect', defaultValue: true) ?? true,
+    final surfaceStyle =
+        AppSurfaceStyle.values.elementAtOrNull(styleIndex ?? 0) ??
+        AppSurfaceStyle.expressive;
+    final migrateLiquidDefaults =
+        surfaceStyle == AppSurfaceStyle.liquidGlass &&
+        !(storage.getBool(_liquidDefaultsMigrationKey, defaultValue: false) ??
+            false);
+    final appearance = AppAppearanceSettings(
+      surfaceStyle: surfaceStyle,
+      glassBlur: migrateLiquidDefaults
+          ? 4
+          : storage.getDouble('glass_blur', defaultValue: 4) ?? 4,
+      glassOpacity: migrateLiquidDefaults
+          ? 0.20
+          : storage.getDouble('glass_opacity', defaultValue: 0.20) ?? 0.20,
+      glassVibrancy: migrateLiquidDefaults
+          ? 1
+          : storage.getDouble('glass_vibrancy', defaultValue: 1) ?? 1,
+      glassRefraction: migrateLiquidDefaults
+          ? 0
+          : storage.getDouble('glass_refraction', defaultValue: 0) ?? 0,
+      chromaticAberration: migrateLiquidDefaults
+          ? true
+          : storage.getBool('glass_chromatic_aberration', defaultValue: true) ??
+                true,
+      depthEffect: migrateLiquidDefaults
+          ? false
+          : storage.getBool('glass_depth_effect', defaultValue: false) ?? false,
       floatingNavigation:
           storage.getBool('floating_navigation', defaultValue: true) ?? true,
       motionMode:
@@ -113,6 +119,23 @@ class AppearanceSettingsNotifier extends Notifier<AppAppearanceSettings> {
           ) ??
           AppMotionMode.system,
     );
+    if (migrateLiquidDefaults) {
+      Future<void>.microtask(() async {
+        await Future.wait([
+          storage.setDouble('glass_blur', appearance.glassBlur),
+          storage.setDouble('glass_opacity', appearance.glassOpacity),
+          storage.setDouble('glass_vibrancy', appearance.glassVibrancy),
+          storage.setDouble('glass_refraction', appearance.glassRefraction),
+          storage.setBool(
+            'glass_chromatic_aberration',
+            appearance.chromaticAberration,
+          ),
+          storage.setBool('glass_depth_effect', appearance.depthEffect),
+          storage.setBool(_liquidDefaultsMigrationKey, true),
+        ]);
+      });
+    }
+    return appearance;
   }
 
   Future<void> update(AppAppearanceSettings value) async {
@@ -121,7 +144,6 @@ class AppearanceSettingsNotifier extends Notifier<AppAppearanceSettings> {
     await Future.wait([
       storage.setInt('surface_style', value.surfaceStyle.index),
       storage.setBool('liquid_glass_enabled', value.liquidGlassEnabled),
-      storage.setInt('glass_quality', value.glassQuality.index),
       storage.setDouble('glass_blur', value.glassBlur),
       storage.setDouble('glass_opacity', value.glassOpacity),
       storage.setDouble('glass_vibrancy', value.glassVibrancy),
@@ -130,6 +152,8 @@ class AppearanceSettingsNotifier extends Notifier<AppAppearanceSettings> {
       storage.setBool('glass_depth_effect', value.depthEffect),
       storage.setBool('floating_navigation', value.floatingNavigation),
       storage.setInt('motion_mode', value.motionMode.index),
+      if (value.liquidGlassEnabled)
+        storage.setBool(_liquidDefaultsMigrationKey, true),
     ]);
   }
 }

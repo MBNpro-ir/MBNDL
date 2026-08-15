@@ -129,14 +129,11 @@ class AppearanceSettingsPage extends ConsumerWidget {
                     value: settings.liquidGlassEnabled,
                     onChanged: (enabled) => unawaited(
                       notifier.update(
-                        settings.copyWith(
-                          surfaceStyle: enabled
-                              ? AppSurfaceStyle.liquidGlass
-                              : AppSurfaceStyle.expressive,
-                          floatingNavigation: enabled
-                              ? true
-                              : settings.floatingNavigation,
-                        ),
+                        enabled
+                            ? settings.enableLiquidGlass()
+                            : settings.copyWith(
+                                surfaceStyle: AppSurfaceStyle.expressive,
+                              ),
                       ),
                     ),
                   ),
@@ -161,30 +158,6 @@ class AppearanceSettingsPage extends ConsumerWidget {
                   title: 'Glass rendering',
                   icon: Icons.water_drop_outlined,
                   children: [
-                    ListTile(
-                      leading: const Icon(Icons.speed_rounded),
-                      title: const Text('Quality'),
-                      subtitle: Text(settings.glassQuality.description),
-                      trailing: DropdownButton<GlassQuality>(
-                        value: settings.glassQuality,
-                        underline: const SizedBox.shrink(),
-                        onChanged: (value) {
-                          if (value == null) return;
-                          unawaited(
-                            notifier.update(
-                              settings.copyWith(glassQuality: value),
-                            ),
-                          );
-                        },
-                        items: [
-                          for (final value in GlassQuality.values)
-                            DropdownMenuItem(
-                              value: value,
-                              child: Text(value.displayName),
-                            ),
-                        ],
-                      ),
-                    ),
                     ListTile(
                       leading: Icon(
                         Icons.palette_outlined,
@@ -280,7 +253,7 @@ class AppearanceSettingsPage extends ConsumerWidget {
                       style: TextStyle(color: colors.onTertiaryContainer),
                     ),
                     subtitle: Text(
-                      'Adaptive or Efficient quality is recommended on older phones; Windows uses the stable single-lens Skia renderer.',
+                      'Rendering quality is selected automatically for the current platform; Windows uses the stable single-lens Skia renderer.',
                       style: TextStyle(
                         color: colors.onTertiaryContainer.withValues(
                           alpha: 0.8,
@@ -352,6 +325,8 @@ class AppearanceSettingsPage extends ConsumerWidget {
   ) async {
     final value = await showModalBottomSheet<AppThemeMode>(
       context: context,
+      useRootNavigator: true,
+      useSafeArea: true,
       builder: (context) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
@@ -385,6 +360,8 @@ class AppearanceSettingsPage extends ConsumerWidget {
   ) async {
     final value = await showModalBottomSheet<AppThemeColor>(
       context: context,
+      useRootNavigator: true,
+      useSafeArea: true,
       isScrollControlled: true,
       builder: (context) => SafeArea(
         child: Padding(

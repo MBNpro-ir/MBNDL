@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../core/notifications/app_notification.dart';
 import '../logger/app_logger.dart';
 import '../storage/download_path_service.dart';
 
@@ -151,14 +152,13 @@ class PermissionService {
 
   void showPermissionDeniedSnackbar(BuildContext context) {
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Required access is still disabled.'),
-        action: SnackBarAction(
-          label: 'Settings',
-          onPressed: openApplicationSettings,
-        ),
-      ),
+    AppNotificationCenter.show(
+      context,
+      kind: AppNotificationKind.warning,
+      title: 'Access is still disabled',
+      message: 'Open Android settings and allow the required access.',
+      actionLabel: 'Open Android settings',
+      onTap: openApplicationSettings,
     );
   }
 

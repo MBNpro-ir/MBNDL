@@ -7,6 +7,7 @@ import 'package:open_filex/open_filex.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../services/logger/app_logger.dart';
+import '../../../core/notifications/app_notification.dart';
 import '../../../services/storage/download_path_service.dart';
 import '../../../shared/models/download_item.dart';
 
@@ -303,6 +304,40 @@ class DownloadItemCard extends StatelessWidget {
         : values.join(' · ');
   }
 
+  int? get _resolvedFileSize {
+    if (item.fileSize != null && item.fileSize! > 0) return item.fileSize;
+    final path = item.filePath;
+    if (path == null) return null;
+    try {
+      final file = File(path);
+      return file.existsSync() ? file.lengthSync() : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String? get _fileName {
+    final path = item.filePath;
+    if (path == null || path.isEmpty) return null;
+    final segments = File(path).uri.pathSegments;
+    return segments.isEmpty ? path : segments.last;
+  }
+
+  String? get _elapsedTime {
+    final completed = item.completedAt;
+    if (completed == null) return null;
+    final duration = completed.difference(item.createdAt);
+    if (duration.isNegative) return null;
+    if (duration.inHours > 0) {
+      return '${duration.inHours}h ${duration.inMinutes.remainder(60)}m '
+          '${duration.inSeconds.remainder(60)}s';
+    }
+    if (duration.inMinutes > 0) {
+      return '${duration.inMinutes}m ${duration.inSeconds.remainder(60)}s';
+    }
+    return '${duration.inSeconds}s';
+  }
+
   String _typeLabel(String type) => switch (type) {
     'audio' => 'Audio',
     'video' => 'Video only',
@@ -369,6 +404,8 @@ class DownloadItemCard extends StatelessWidget {
   void _showDetails(BuildContext context) {
     showModalBottomSheet<void>(
       context: context,
+      useRootNavigator: true,
+      useSafeArea: true,
       isScrollControlled: true,
       showDragHandle: true,
       builder: (context) => DraggableScrollableSheet(
@@ -401,6 +438,25 @@ class DownloadItemCard extends StatelessWidget {
                   label: 'Format',
                   value: item.formatLabel ?? _metadata,
                 ),
+                if (item.quality?.isNotEmpty == true)
+                  _DetailRow(label: 'Quality', value: item.quality!),
+                if (item.downloadType?.isNotEmpty == true)
+                  _DetailRow(
+                    label: 'Output',
+                    value: _typeLabel(item.downloadType!),
+                  ),
+                if (item.formatId?.isNotEmpty == true)
+                  _DetailRow(label: 'Format ID', value: item.formatId!),
+                if (item.fileExtension?.isNotEmpty == true)
+                  _DetailRow(
+                    label: 'Container',
+                    value: item.fileExtension!.toUpperCase(),
+                  ),
+                if (_resolvedFileSize != null)
+                  _DetailRow(
+                    label: 'File size',
+                    value: _fileSize(_resolvedFileSize!),
+                  ),
                 _DetailRow(
                   label: 'Added',
                   value: DateFormat(
@@ -413,6 +469,15 @@ class DownloadItemCard extends StatelessWidget {
                     value: DateFormat(
                       'yyyy-MM-dd HH:mm:ss',
                     ).format(item.completedAt!),
+                  ),
+                if (_elapsedTime != null)
+                  _DetailRow(label: 'Elapsed', value: _elapsedTime!),
+                if (_fileName != null)
+                  _DetailRow(label: 'File name', value: _fileName!),
+                if (item.filePath != null)
+                  _DetailRow(
+                    label: 'Folder',
+                    value: File(item.filePath!).parent.path,
                   ),
                 if (item.videoCodec != null)
                   _DetailRow(label: 'Video codec', value: item.videoCodec!),
@@ -497,9 +562,11 @@ class DownloadItemCard extends StatelessWidget {
   }
 
   void _message(BuildContext context, String message) {
-    ScaffoldMessenger.of(
+    AppNotificationCenter.show(
       context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+      title: 'Download file',
+      message: message,
+    );
   }
 }
 

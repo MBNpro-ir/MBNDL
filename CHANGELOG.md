@@ -2,6 +2,28 @@
 
 All notable user-facing and developer-facing changes are documented in this file.
 
+## 🔔 1.0.7 — 2026-08-15
+
+### 🧭 Overlays and safe navigation
+
+- 🪟 Moved every bottom sheet to the root overlay so theme choices, filters, and download actions always open above the floating navigation.
+- 👤 Lifted the YouTube account import action into the safe interactive area instead of allowing the glass capsule to cover it.
+- 🫧 Set the Liquid Glass baseline to 4 px blur, 20% tint opacity, 100% vibrancy, zero refraction, chromatic edges on, and depth off; existing 1.0.6 glass users receive the corrected baseline once.
+- 🧹 Removed the ineffective manual Glass Quality selector and made renderer quality automatic per platform.
+
+### 🔔 Event notifications
+
+- ✨ Replaced every legacy SnackBar with a unified animated in-app notification surface for information, success, warning, error, download, and update events.
+- 📍 Kept notifications above the floating navigation, with Reduced Motion support, swipe-safe dismissal, event icons, concise actions, and smooth entrance/exit animation.
+- 🚀 Made update notifications open and focus **Settings → App updates**; download start, completion, failure, and cancellation events now open Downloads.
+
+### 🎞️ Rich format and file details
+
+- 🌍 Added multilingual audio labels using yt-dlp’s stream `language` metadata, showing a flag plus the exact language/region code for YouTube tracks.
+- 📊 Added exact dimensions, exact/estimated size, total bitrate, FPS, HDR/dynamic range, channel layout, sample rate, protocol, format note, raw video codec, and raw audio codec to format choices.
+- 📁 Expanded downloaded-file details with output type, format ID, quality, container, resolved file size, elapsed time, file name, and folder.
+- 🏷️ Set the application version to `1.0.7+7`.
+
 ## 🫧 1.0.6 — 2026-08-15
 
 ### 🎨 Liquid Glass navigation

@@ -785,10 +785,25 @@ class _CompactFormatTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final details = <String>[
+      if (format.width != null && format.height != null)
+        '${format.width}×${format.height}',
       if (format.hasValidFilesize) format.filesizeDisplay,
       if (format.hasValidBitrate) format.bitrateDisplay,
       if (format.hasValidFps) '${format.fps!.round()} fps',
       'ID ${format.formatId}',
+    ];
+    final technicalDetails = <String>[
+      if (format.formatNote?.trim().isNotEmpty == true) format.formatNote!,
+      if (format.dynamicRange?.trim().isNotEmpty == true)
+        format.dynamicRange!.toUpperCase(),
+      if (format.channelDisplay != null) format.channelDisplay!,
+      if (format.sampleRateDisplay != null) format.sampleRateDisplay!,
+      if (format.protocol?.trim().isNotEmpty == true)
+        format.protocol!.toUpperCase(),
+      if (format.vcodec?.trim().isNotEmpty == true && format.vcodec != 'none')
+        'V: ${format.vcodec}',
+      if (format.acodec?.trim().isNotEmpty == true && format.acodec != 'none')
+        'A: ${format.acodec}',
     ];
     final title = _codecVariantLabel(format);
     return Material(
@@ -845,6 +860,11 @@ class _CompactFormatTile extends StatelessWidget {
                                   ),
                             ),
                           ),
+                        if (format.languageBadge != null)
+                          _FormatMetadataChip(
+                            label: format.languageBadge!,
+                            emphasized: true,
+                          ),
                       ],
                     ),
                     const SizedBox(height: 3),
@@ -858,11 +878,52 @@ class _CompactFormatTile extends StatelessWidget {
                             : colors.onSurfaceVariant,
                       ),
                     ),
+                    if (technicalDetails.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 5,
+                        runSpacing: 5,
+                        children: [
+                          for (final detail in technicalDetails)
+                            _FormatMetadataChip(label: detail),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FormatMetadataChip extends StatelessWidget {
+  const _FormatMetadataChip({required this.label, this.emphasized = false});
+
+  final String label;
+  final bool emphasized;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: ShapeDecoration(
+        color: emphasized
+            ? colors.primaryContainer
+            : colors.surfaceContainerHighest,
+        shape: const StadiumBorder(),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: emphasized
+              ? colors.onPrimaryContainer
+              : colors.onSurfaceVariant,
+          fontWeight: emphasized ? FontWeight.w900 : FontWeight.w600,
         ),
       ),
     );

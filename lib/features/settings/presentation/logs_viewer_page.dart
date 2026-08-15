@@ -4,6 +4,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/utils/floating_navigation_insets.dart';
+import '../../../core/notifications/app_notification.dart';
 import '../../../services/logger/app_log_entry.dart';
 import '../../../services/logger/app_logger.dart';
 
@@ -75,9 +76,12 @@ class _LogsViewerPageState extends State<LogsViewerPage> {
     final text = entries.reversed.map(_humanReadable).join('\n\n');
     await Clipboard.setData(ClipboardData(text: text));
     if (!mounted) return;
-    ScaffoldMessenger.of(
+    AppNotificationCenter.show(
       context,
-    ).showSnackBar(const SnackBar(content: Text('Visible log events copied')));
+      kind: AppNotificationKind.success,
+      title: 'Application logs',
+      message: 'Visible log events copied.',
+    );
   }
 
   String _humanReadable(AppLogEntry entry) => [

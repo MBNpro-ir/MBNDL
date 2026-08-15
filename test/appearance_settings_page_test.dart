@@ -18,7 +18,6 @@ void main() {
       containsAll(const {
         'surface_style',
         'liquid_glass_enabled',
-        'glass_quality',
         'glass_blur',
         'glass_opacity',
         'glass_vibrancy',
@@ -62,6 +61,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Liquid Glass (Beta)'), findsWidgets);
+    expect(find.text('Quality'), findsNothing);
     await tester.scrollUntilVisible(
       find.text('Lens refraction'),
       260,
@@ -88,5 +88,15 @@ void main() {
       findsOneWidget,
     );
     expect(tester.takeException(), isNull);
+  });
+
+  test('Liquid Glass defaults match the v1.0.7 visual baseline', () {
+    final appearance = const AppAppearanceSettings().enableLiquidGlass();
+    expect(appearance.glassBlur, 4);
+    expect(appearance.glassOpacity, 0.20);
+    expect(appearance.glassVibrancy, 1);
+    expect(appearance.glassRefraction, 0);
+    expect(appearance.chromaticAberration, isTrue);
+    expect(appearance.depthEffect, isFalse);
   });
 }

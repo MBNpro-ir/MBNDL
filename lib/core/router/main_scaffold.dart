@@ -432,12 +432,7 @@ class _MainScaffoldState extends State<MainScaffold>
     final showLabels = curved < 0.58;
     final blur = (1.4 + appearance.glassBlur / 6).clamp(2.0, 6.5);
     final refraction = appearance.glassRefraction.clamp(0.0, 1.0);
-    final qualityScale = switch (appearance.glassQuality) {
-      GlassQuality.efficient => 0.58,
-      GlassQuality.balanced => 0.78,
-      GlassQuality.vivid => 1.0,
-      GlassQuality.adaptive => Platform.isAndroid ? 0.72 : 0.66,
-    };
+    final qualityScale = Platform.isAndroid ? 0.72 : 0.66;
     final tintAlpha = (appearance.glassOpacity * 0.34).clamp(0.08, 0.34);
     final reduceMotion =
         MediaQuery.maybeOf(context)?.disableAnimations ?? false;
@@ -515,7 +510,7 @@ class _MainScaffoldState extends State<MainScaffold>
       backgroundColor: colors.surface,
       pixelRatio: qualityScale,
       realTimeCapture: !Platform.isWindows,
-      useSync: appearance.glassQuality != GlassQuality.efficient,
+      useSync: true,
       useImpellerBackdrop: Platform.isWindows ? false : null,
       body: _buildFadedNavigationBody(context, body),
       bottomNavigationBar: navBar,

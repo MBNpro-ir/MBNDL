@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../core/notifications/app_notification.dart';
 import '../../../services/downloader/ffmpeg_manager.dart';
 import '../../../services/logger/app_logger.dart';
 import '../../../services/downloader/download_error_mapper.dart';
@@ -73,9 +74,9 @@ class _FFmpegSettingsState extends State<FFmpegSettings>
         });
 
         if (current != null && latest != null && current == latest) {
-          _showSnackBar('FFmpeg is up to date!');
+          _showNotice('FFmpeg is up to date!');
         } else if (latest != null) {
-          _showSnackBar('Update available: $latest');
+          _showNotice('Update available: $latest');
         }
       }
     } catch (e) {
@@ -83,7 +84,7 @@ class _FFmpegSettingsState extends State<FFmpegSettings>
         setState(() {
           _isChecking = false;
         });
-        _showSnackBar('Failed to check for updates', isError: true);
+        _showNotice('Failed to check for updates', isError: true);
       }
     }
   }
@@ -119,10 +120,10 @@ class _FFmpegSettingsState extends State<FFmpegSettings>
         });
 
         if (success) {
-          _showSnackBar('FFmpeg updated successfully!');
+          _showNotice('FFmpeg updated successfully!');
           await _loadVersionInfo();
         } else {
-          _showSnackBar('Failed to update FFmpeg', isError: true);
+          _showNotice('Failed to update FFmpeg', isError: true);
         }
       }
     } catch (e) {
@@ -130,22 +131,19 @@ class _FFmpegSettingsState extends State<FFmpegSettings>
         setState(() {
           _isDownloading = false;
         });
-        _showSnackBar(DownloadErrorMapper.from(e).displayText, isError: true);
+        _showNotice(DownloadErrorMapper.from(e).displayText, isError: true);
       }
     }
   }
 
-  void _showSnackBar(String message, {bool isError = false}) {
+  void _showNotice(String message, {bool isError = false}) {
     if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: isError
-            ? Theme.of(context).colorScheme.error
-            : Theme.of(context).colorScheme.primary,
-        behavior: SnackBarBehavior.floating,
-      ),
+    AppNotificationCenter.show(
+      context,
+      kind: isError ? AppNotificationKind.error : AppNotificationKind.success,
+      title: isError ? 'FFmpeg needs attention' : 'FFmpeg',
+      message: message,
     );
   }
 

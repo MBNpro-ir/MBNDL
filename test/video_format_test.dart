@@ -34,4 +34,24 @@ void main() {
     expect(format.hasAudio, isTrue);
     expect(format.displayName, 'Video • MP4');
   });
+
+  test('keeps yt-dlp language and technical audio metadata', () {
+    final format = VideoFormat.fromJson({
+      'format_id': '251-fa',
+      'ext': 'webm',
+      'acodec': 'opus',
+      'language': 'fa',
+      'audio_channels': 2,
+      'asr': 48000,
+      'filesize_approx': 10485760,
+      'protocol': 'https',
+      'format_note': 'original',
+    });
+
+    expect(format.languageBadge, '🇮🇷 FA');
+    expect(format.channelDisplay, 'Stereo · 2 ch');
+    expect(format.sampleRateDisplay, '48 kHz');
+    expect(format.filesizeDisplay, '~10.0 MB');
+    expect(format.protocol, 'https');
+  });
 }

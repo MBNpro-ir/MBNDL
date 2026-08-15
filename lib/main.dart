@@ -8,6 +8,7 @@ import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'core/router/app_router.dart';
+import 'core/notifications/app_notification.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/app_theme_mode.dart';
 import 'core/theme/app_appearance.dart';
@@ -22,9 +23,11 @@ import 'services/storage/settings_storage_service.dart';
 import 'services/storage/presets_storage_service.dart';
 import 'services/storage/storage_service.dart';
 import 'shared/models/windows_close_behavior.dart';
+import 'shared/models/download_item.dart';
 import 'shared/providers/settings_provider.dart';
 import 'shared/providers/app_update_provider.dart';
 import 'shared/providers/cookie_provider.dart';
+import 'shared/providers/downloads_provider.dart';
 import 'shared/providers/youtube_auth_provider.dart';
 
 Future<void> main() async {
@@ -356,58 +359,146 @@ class _MBNDownloaderAppState extends ConsumerState<MBNDownloaderApp>
     });
   }
 
-  Future<void> _showApplicationUpdate(AppUpdateState update) async {
+  void _showApplicationUpdate(AppUpdateState update) {
     final release = update.release;
     if (release == null || _promptedUpdateVersion == release.version) return;
-    final dialogContext = rootNavigatorKey.currentContext;
-    if (dialogContext == null) return;
+    final notificationContext = rootNavigatorKey.currentContext;
+    if (notificationContext == null) return;
     _promptedUpdateVersion = release.version;
-
-    final install = await showDialog<bool>(
-      context: dialogContext,
-      builder: (context) => AlertDialog(
-        icon: const Icon(Icons.system_update_alt_rounded),
-        title: Text('MBNDL ${release.version} is ready'),
-        content: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 520, maxHeight: 360),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  Platform.isWindows
-                      ? 'The update has downloaded. MBNDL will close, update, and reopen automatically.'
-                      : 'The update has downloaded. Android will ask you to confirm installation.',
-                ),
-                if (release.notes.trim().isNotEmpty) ...[
-                  const SizedBox(height: 16),
-                  Text(
-                    'What’s new',
-                    style: Theme.of(context).textTheme.titleSmall,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(release.notes.trim()),
-                ],
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Later'),
-          ),
-          FilledButton.icon(
-            onPressed: () => Navigator.pop(context, true),
-            icon: const Icon(Icons.install_mobile_rounded),
-            label: const Text('Install'),
-          ),
-        ],
-      ),
+    AppNotificationCenter.show(
+      notificationContext,
+      kind: AppNotificationKind.update,
+      title: 'MBNDL ${release.version} is ready',
+      message: Platform.isWindows
+          ? 'The update is downloaded and ready to install.'
+          : 'The Android package is downloaded and ready for confirmation.',
+      actionLabel: 'Open update settings',
+      onTap: () => unawaited(openAppUpdateSettings()),
     );
-    if (install == true && mounted) {
-      await ref.read(appUpdateProvider.notifier).installUpdate();
+  }
+
+  void _showUpdateEvent(AppUpdateState previous, AppUpdateState next) {
+    final context = rootNavigatorKey.currentContext;
+    if (context == null) return;
+    if (next.stage == AppUpdateStage.downloading &&
+        previous.stage != AppUpdateStage.downloading) {
+      AppNotificationCenter.show(
+        context,
+        kind: AppNotificationKind.download,
+        title: 'Downloading MBNDL update',
+        message: 'The update continues safely in the background.',
+        actionLabel: 'View progress',
+        onTap: () => unawaited(openAppUpdateSettings()),
+      );
+    } else if (next.stage == AppUpdateStage.available &&
+        !next.backgroundDownloads &&
+        previous.stage != AppUpdateStage.available) {
+      AppNotificationCenter.show(
+        context,
+        kind: AppNotificationKind.update,
+        title: 'MBNDL ${next.release?.version ?? ''} is available',
+        message: 'Review the release and choose when to download it.',
+        actionLabel: 'Open update settings',
+        onTap: () => unawaited(openAppUpdateSettings()),
+      );
+    } else if (next.stage == AppUpdateStage.error &&
+        previous.message != next.message) {
+      AppNotificationCenter.show(
+        context,
+        kind: AppNotificationKind.error,
+        title: 'Update needs attention',
+        message: next.message ?? 'The update could not be prepared.',
+        actionLabel: 'Open update settings',
+        onTap: () => unawaited(openAppUpdateSettings()),
+      );
+    }
+  }
+
+  void _showDownloadEvent(
+    AsyncValue<List<DownloadItem>>? previous,
+    AsyncValue<List<DownloadItem>> next,
+  ) {
+    if (_phase != _StartupPhase.ready) return;
+    final before = previous?.asData?.value;
+    final after = next.asData?.value;
+    if (before == null || after == null) return;
+    final oldById = {for (final item in before) item.id: item};
+    final changed = after
+        .where((item) {
+          final old = oldById[item.id];
+          return old != null && old.status != item.status;
+        })
+        .toList(growable: false);
+    if (changed.isEmpty) return;
+    final context = rootNavigatorKey.currentContext;
+    if (context == null) return;
+
+    final failed = changed
+        .where((item) => item.status == DownloadStatus.failed)
+        .toList();
+    final completed = changed
+        .where((item) => item.status == DownloadStatus.completed)
+        .toList();
+    final started = changed
+        .where((item) => item.status == DownloadStatus.downloading)
+        .toList();
+    final cancelled = changed
+        .where((item) => item.status == DownloadStatus.cancelled)
+        .toList();
+
+    void show({
+      required AppNotificationKind kind,
+      required String title,
+      required String message,
+    }) {
+      AppNotificationCenter.show(
+        context,
+        kind: kind,
+        title: title,
+        message: message,
+        actionLabel: 'View downloads',
+        onTap: () => appRouter.go('/history'),
+      );
+    }
+
+    if (failed.isNotEmpty) {
+      show(
+        kind: AppNotificationKind.error,
+        title: failed.length == 1
+            ? 'Download failed'
+            : '${failed.length} downloads failed',
+        message: failed.length == 1
+            ? failed.single.errorMessage ?? failed.single.title
+            : 'Open Downloads to review what needs attention.',
+      );
+    } else if (completed.isNotEmpty) {
+      show(
+        kind: AppNotificationKind.success,
+        title: completed.length == 1
+            ? 'Download ready'
+            : '${completed.length} downloads are ready',
+        message: completed.length == 1
+            ? completed.single.title
+            : 'All completed files are available in Downloads/MBNDL.',
+      );
+    } else if (started.isNotEmpty) {
+      show(
+        kind: AppNotificationKind.download,
+        title: started.length == 1
+            ? 'Download started'
+            : '${started.length} downloads started',
+        message: started.length == 1
+            ? started.single.title
+            : 'Progress continues in the background.',
+      );
+    } else if (cancelled.isNotEmpty) {
+      show(
+        kind: AppNotificationKind.warning,
+        title: 'Download cancelled',
+        message: cancelled.length == 1
+            ? cancelled.single.title
+            : '${cancelled.length} downloads were cancelled.',
+      );
     }
   }
 
@@ -488,13 +579,11 @@ class _MBNDownloaderAppState extends ConsumerState<MBNDownloaderApp>
       if (selected != null) {
         final messengerContext = rootNavigatorKey.currentContext;
         if (messengerContext != null && messengerContext.mounted) {
-          ScaffoldMessenger.of(messengerContext).showSnackBar(
-            SnackBar(
-              content: Text(
-                '${selected.name} is active. Retry the YouTube link.',
-              ),
-              showCloseIcon: true,
-            ),
+          AppNotificationCenter.show(
+            messengerContext,
+            kind: AppNotificationKind.success,
+            title: 'YouTube account connected',
+            message: '${selected.name} is active. Retry the YouTube link.',
           );
         }
       }
@@ -509,11 +598,14 @@ class _MBNDownloaderAppState extends ConsumerState<MBNDownloaderApp>
     final color = ref.watch(themeColorProvider);
     final appearance = ref.watch(appearanceSettingsProvider);
     ref.listen<AppUpdateState>(appUpdateProvider, (previous, next) {
+      if (_phase == _StartupPhase.ready && previous != null) {
+        _showUpdateEvent(previous, next);
+      }
       if (_phase == _StartupPhase.ready &&
           next.stage == AppUpdateStage.ready &&
           previous?.packagePath != next.packagePath) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) unawaited(_showApplicationUpdate(next));
+          if (mounted) _showApplicationUpdate(next);
         });
       }
     });
@@ -523,6 +615,12 @@ class _MBNDownloaderAppState extends ConsumerState<MBNDownloaderApp>
           if (mounted) unawaited(_showYouTubeAuthIssue(next));
         });
       }
+    });
+    ref.listen<AsyncValue<List<DownloadItem>>>(downloadsProvider, (
+      previous,
+      next,
+    ) {
+      _showDownloadEvent(previous, next);
     });
 
     return DynamicColorBuilder(

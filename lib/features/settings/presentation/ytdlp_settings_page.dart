@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/notifications/app_notification.dart';
 import '../../../shared/providers/settings_provider.dart';
 import '../../../shared/utils/validators.dart';
 import '../../../services/storage/presets_storage_service.dart';
@@ -632,14 +633,13 @@ class _YtDlpSettingsPageState extends ConsumerState<YtDlpSettingsPage>
     await _loadAndroidEngineVersion();
     if (!mounted) return;
     setState(() => _updatingAndroidEngine = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          updated
-              ? 'Android yt-dlp updated from $channel'
-              : 'Could not update yt-dlp; the bundled version is still available',
-        ),
-      ),
+    AppNotificationCenter.show(
+      context,
+      kind: updated ? AppNotificationKind.success : AppNotificationKind.warning,
+      title: 'Android yt-dlp',
+      message: updated
+          ? 'Updated from the $channel channel.'
+          : 'The update failed; the bundled version is still available.',
     );
   }
 
@@ -684,8 +684,11 @@ class _YtDlpSettingsPageState extends ConsumerState<YtDlpSettingsPage>
   Future<void> _saveCustomPreset(String name) async {
     if (PresetsStorageService.instance.presetNameExists(name)) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Preset "$name" already exists')),
+        AppNotificationCenter.show(
+          context,
+          kind: AppNotificationKind.warning,
+          title: 'Preset already exists',
+          message: 'Preset "$name" already exists.',
         );
       }
       return;
@@ -707,9 +710,12 @@ class _YtDlpSettingsPageState extends ConsumerState<YtDlpSettingsPage>
     });
 
     if (mounted) {
-      ScaffoldMessenger.of(
+      AppNotificationCenter.show(
         context,
-      ).showSnackBar(SnackBar(content: Text('Preset "$name" saved!')));
+        kind: AppNotificationKind.success,
+        title: 'Preset saved',
+        message: 'Preset "$name" is ready to use.',
+      );
     }
   }
 }

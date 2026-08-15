@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/utils/floating_navigation_insets.dart';
+import '../../../core/notifications/app_notification.dart';
 import '../../../services/logger/app_logger.dart';
 import '../../../services/storage/download_path_service.dart';
 import '../../../shared/providers/settings_provider.dart';
@@ -83,12 +84,11 @@ class _DownloadPathSettingsState extends ConsumerState<DownloadPathSettings> {
 
   void _showMessage(String message, {bool isError = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: isError ? Theme.of(context).colorScheme.error : null,
-      ),
+    AppNotificationCenter.show(
+      context,
+      kind: isError ? AppNotificationKind.error : AppNotificationKind.success,
+      title: isError ? 'Download folder needs attention' : 'Download folder',
+      message: message,
     );
   }
 

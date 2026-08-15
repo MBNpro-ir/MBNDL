@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../core/notifications/app_notification.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../services/downloader/ytdlp_manager.dart';
 import '../../../services/logger/app_logger.dart';
@@ -78,9 +79,9 @@ class _YtDlpSettingsState extends ConsumerState<YtDlpSettings>
         });
 
         if (current != null && latest != null && current == latest) {
-          _showSnackBar('yt-dlp is up to date!');
+          _showNotice('yt-dlp is up to date!');
         } else if (latest != null) {
-          _showSnackBar('Update available: $latest');
+          _showNotice('Update available: $latest');
         }
       }
     } catch (e) {
@@ -88,7 +89,7 @@ class _YtDlpSettingsState extends ConsumerState<YtDlpSettings>
         setState(() {
           _isChecking = false;
         });
-        _showSnackBar('Failed to check for updates', isError: true);
+        _showNotice('Failed to check for updates', isError: true);
       }
     }
   }
@@ -125,10 +126,10 @@ class _YtDlpSettingsState extends ConsumerState<YtDlpSettings>
         });
 
         if (success) {
-          _showSnackBar('yt-dlp updated successfully!');
+          _showNotice('yt-dlp updated successfully!');
           await _loadVersionInfo();
         } else {
-          _showSnackBar('Failed to update yt-dlp', isError: true);
+          _showNotice('Failed to update yt-dlp', isError: true);
         }
       }
     } catch (e) {
@@ -136,22 +137,19 @@ class _YtDlpSettingsState extends ConsumerState<YtDlpSettings>
         setState(() {
           _isDownloading = false;
         });
-        _showSnackBar(DownloadErrorMapper.from(e).displayText, isError: true);
+        _showNotice(DownloadErrorMapper.from(e).displayText, isError: true);
       }
     }
   }
 
-  void _showSnackBar(String message, {bool isError = false}) {
+  void _showNotice(String message, {bool isError = false}) {
     if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: isError
-            ? Theme.of(context).colorScheme.error
-            : Theme.of(context).colorScheme.primary,
-        behavior: SnackBarBehavior.floating,
-      ),
+    AppNotificationCenter.show(
+      context,
+      kind: isError ? AppNotificationKind.error : AppNotificationKind.success,
+      title: isError ? 'yt-dlp needs attention' : 'yt-dlp',
+      message: message,
     );
   }
 

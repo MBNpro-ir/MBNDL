@@ -8,17 +8,6 @@ enum AppSurfaceStyle {
   final String displayName;
 }
 
-enum GlassQuality {
-  adaptive('Adaptive', 'Balances the effect for the current device'),
-  efficient('Efficient', 'Less blur and fewer GPU effects'),
-  balanced('Balanced', 'Full glass with moderate rendering cost'),
-  vivid('Vivid', 'Strongest refraction and depth');
-
-  const GlassQuality(this.displayName, this.description);
-  final String displayName;
-  final String description;
-}
-
 enum AppMotionMode {
   system('Follow system'),
   full('Full motion'),
@@ -32,19 +21,17 @@ enum AppMotionMode {
 class AppAppearanceSettings {
   const AppAppearanceSettings({
     this.surfaceStyle = AppSurfaceStyle.expressive,
-    this.glassQuality = GlassQuality.adaptive,
-    this.glassBlur = 18,
-    this.glassOpacity = 0.64,
-    this.glassVibrancy = 0.55,
-    this.glassRefraction = 0.42,
+    this.glassBlur = 4,
+    this.glassOpacity = 0.20,
+    this.glassVibrancy = 1,
+    this.glassRefraction = 0,
     this.chromaticAberration = true,
-    this.depthEffect = true,
+    this.depthEffect = false,
     this.floatingNavigation = true,
     this.motionMode = AppMotionMode.system,
   });
 
   final AppSurfaceStyle surfaceStyle;
-  final GlassQuality glassQuality;
   final double glassBlur;
   final double glassOpacity;
   final double glassVibrancy;
@@ -58,7 +45,6 @@ class AppAppearanceSettings {
 
   AppAppearanceSettings copyWith({
     AppSurfaceStyle? surfaceStyle,
-    GlassQuality? glassQuality,
     double? glassBlur,
     double? glassOpacity,
     double? glassVibrancy,
@@ -69,7 +55,6 @@ class AppAppearanceSettings {
     AppMotionMode? motionMode,
   }) => AppAppearanceSettings(
     surfaceStyle: surfaceStyle ?? this.surfaceStyle,
-    glassQuality: glassQuality ?? this.glassQuality,
     glassBlur: glassBlur ?? this.glassBlur,
     glassOpacity: glassOpacity ?? this.glassOpacity,
     glassVibrancy: glassVibrancy ?? this.glassVibrancy,
@@ -78,6 +63,17 @@ class AppAppearanceSettings {
     depthEffect: depthEffect ?? this.depthEffect,
     floatingNavigation: floatingNavigation ?? this.floatingNavigation,
     motionMode: motionMode ?? this.motionMode,
+  );
+
+  AppAppearanceSettings enableLiquidGlass() => copyWith(
+    surfaceStyle: AppSurfaceStyle.liquidGlass,
+    floatingNavigation: true,
+    glassBlur: 4,
+    glassOpacity: 0.20,
+    glassVibrancy: 1,
+    glassRefraction: 0,
+    chromaticAberration: true,
+    depthEffect: false,
   );
 }
 

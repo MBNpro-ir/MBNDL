@@ -15,6 +15,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_theme_mode.dart';
+import '../../../core/notifications/app_notification.dart';
 import '../../../core/utils/floating_navigation_insets.dart';
 import '../../../shared/providers/settings_provider.dart';
 import '../../../shared/providers/cookie_provider.dart';
@@ -38,6 +39,8 @@ import '../../../services/permissions/permission_service.dart';
 import 'logs_viewer_page.dart';
 import 'cookie_manager_page.dart';
 import 'appearance_settings_page.dart';
+
+final appUpdatesSettingsSectionKey = GlobalKey();
 
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
@@ -132,10 +135,11 @@ class SettingsPage extends ConsumerWidget {
       ],
     );
 
-    final updatesSection = const SettingsSection(
+    final updatesSection = SettingsSection(
+      key: appUpdatesSettingsSectionKey,
       title: 'App updates',
       icon: Icons.system_update_alt_rounded,
-      children: [AppUpdateSettings()],
+      children: const [AppUpdateSettings()],
     );
 
     final diagnosticsSection = SettingsSection(
@@ -797,19 +801,37 @@ class SettingsPage extends ConsumerWidget {
     Navigator.push(context, MaterialPageRoute(builder: (context) => page));
   }
 
+  void _notify(
+    BuildContext context,
+    String message, {
+    AppNotificationKind kind = AppNotificationKind.info,
+    String title = 'Settings',
+  }) {
+    AppNotificationCenter.show(
+      context,
+      title: title,
+      message: message,
+      kind: kind,
+    );
+  }
+
   Future<void> _exportSettings(BuildContext context) async {
     try {
       final path = await SettingsExportService.instance.exportSettings();
       if (context.mounted && path != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Settings exported successfully!')),
+        _notify(
+          context,
+          'Settings exported successfully.',
+          kind: AppNotificationKind.success,
         );
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(
+        _notify(
           context,
-        ).showSnackBar(SnackBar(content: Text('Failed to export: $e')));
+          'Failed to export: $e',
+          kind: AppNotificationKind.error,
+        );
       }
     }
   }
@@ -818,15 +840,21 @@ class SettingsPage extends ConsumerWidget {
     try {
       final path = await SettingsExportService.instance.exportLogs();
       if (context.mounted && path != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Logs exported successfully!')),
+        _notify(
+          context,
+          'Logs exported successfully.',
+          kind: AppNotificationKind.success,
+          title: 'Application logs',
         );
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(
+        _notify(
           context,
-        ).showSnackBar(SnackBar(content: Text('Failed to export logs: $e')));
+          'Failed to export logs: $e',
+          kind: AppNotificationKind.error,
+          title: 'Application logs',
+        );
       }
     }
   }
@@ -844,21 +872,21 @@ class SettingsPage extends ConsumerWidget {
           ref.invalidate(deletePreferenceProvider);
           ref.invalidate(windowsCloseBehaviorProvider);
           ref.invalidate(appUpdateProvider);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Settings applied · ${result.preferenceCount} preferences · '
-                '${result.presetCount} presets',
-              ),
-            ),
+          _notify(
+            context,
+            'Settings applied · ${result.preferenceCount} preferences · '
+            '${result.presetCount} presets',
+            kind: AppNotificationKind.success,
           );
         }
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(
+        _notify(
           context,
-        ).showSnackBar(SnackBar(content: Text('Failed to import: $e')));
+          'Failed to import: $e',
+          kind: AppNotificationKind.error,
+        );
       }
     }
   }
@@ -895,10 +923,10 @@ class SettingsPage extends ConsumerWidget {
                       await Clipboard.setData(ClipboardData(text: pathStr));
                       if (context.mounted) {
                         Navigator.pop(context);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Path copied to clipboard'),
-                          ),
+                        _notify(
+                          context,
+                          'Path copied to clipboard.',
+                          kind: AppNotificationKind.success,
                         );
                       }
                     },
@@ -913,14 +941,18 @@ class SettingsPage extends ConsumerWidget {
             );
           } else {
             if (!context.mounted) return;
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Failed to get folder path: $e')),
+            _notify(
+              context,
+              'Failed to get folder path: $e',
+              kind: AppNotificationKind.error,
             );
           }
         } else {
-          ScaffoldMessenger.of(
+          _notify(
             context,
-          ).showSnackBar(SnackBar(content: Text('Failed to open folder: $e')));
+            'Failed to open folder: $e',
+            kind: AppNotificationKind.error,
+          );
         }
       }
     }
@@ -944,22 +976,20 @@ class SettingsPage extends ConsumerWidget {
         );
 
         if (!fallbackLaunched && context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Could not open GitHub repository'),
-              behavior: SnackBarBehavior.floating,
-            ),
+          _notify(
+            context,
+            'Could not open the GitHub repository.',
+            kind: AppNotificationKind.error,
           );
         }
       }
     } catch (e) {
       AppLogger.error('Failed to open GitHub URL', e);
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: ${e.toString()}'),
-            behavior: SnackBarBehavior.floating,
-          ),
+        _notify(
+          context,
+          'Error: ${e.toString()}',
+          kind: AppNotificationKind.error,
         );
       }
     }
@@ -970,11 +1000,11 @@ class SettingsPage extends ConsumerWidget {
       final logPath = await AppLogger.getLogFilePath();
       if (logPath == null) {
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Log file not found'),
-              behavior: SnackBarBehavior.floating,
-            ),
+          _notify(
+            context,
+            'Log file not found.',
+            kind: AppNotificationKind.warning,
+            title: 'Application logs',
           );
         }
         return;
@@ -1000,10 +1030,10 @@ class SettingsPage extends ConsumerWidget {
                     await Clipboard.setData(ClipboardData(text: logDir.path));
                     if (context.mounted) {
                       Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Path copied to clipboard'),
-                        ),
+                      _notify(
+                        context,
+                        'Path copied to clipboard.',
+                        kind: AppNotificationKind.success,
                       );
                     }
                   },
@@ -1031,12 +1061,11 @@ class SettingsPage extends ConsumerWidget {
     } catch (e) {
       AppLogger.error('Failed to open log folder', e);
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to open folder: ${e.toString()}'),
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
+        _notify(
+          context,
+          'Failed to open folder: ${e.toString()}',
+          kind: AppNotificationKind.error,
+          title: 'Application logs',
         );
       }
     }
@@ -1277,12 +1306,10 @@ class SettingsPage extends ConsumerWidget {
       AppLogger.error('Failed to reset app', e, stackTrace);
       if (context.mounted) {
         Navigator.pop(context); // Close loading dialog
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to reset app: ${e.toString()}'),
-            backgroundColor: Theme.of(context).colorScheme.error,
-            behavior: SnackBarBehavior.floating,
-          ),
+        _notify(
+          context,
+          'Failed to reset app: ${e.toString()}',
+          kind: AppNotificationKind.error,
         );
       }
     }
@@ -1294,11 +1321,10 @@ class SettingsPage extends ConsumerWidget {
           .getSettingsFilePath();
       if (settingsPath == null) {
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Settings file not initialized'),
-              behavior: SnackBarBehavior.floating,
-            ),
+          _notify(
+            context,
+            'Settings file is not initialized.',
+            kind: AppNotificationKind.warning,
           );
         }
         return;
@@ -1307,11 +1333,10 @@ class SettingsPage extends ConsumerWidget {
       await Clipboard.setData(ClipboardData(text: settingsPath));
 
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Settings path copied to clipboard'),
-            behavior: SnackBarBehavior.floating,
-          ),
+        _notify(
+          context,
+          'Settings path copied to clipboard.',
+          kind: AppNotificationKind.success,
         );
       }
 
@@ -1319,12 +1344,10 @@ class SettingsPage extends ConsumerWidget {
     } catch (e) {
       AppLogger.error('Failed to copy settings path', e);
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to copy: ${e.toString()}'),
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
+        _notify(
+          context,
+          'Failed to copy: ${e.toString()}',
+          kind: AppNotificationKind.error,
         );
       }
     }
@@ -1336,11 +1359,10 @@ class SettingsPage extends ConsumerWidget {
           .getSettingsFilePath();
       if (settingsPath == null) {
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Settings file not initialized'),
-              behavior: SnackBarBehavior.floating,
-            ),
+          _notify(
+            context,
+            'Settings file is not initialized.',
+            kind: AppNotificationKind.warning,
           );
         }
         return;
@@ -1368,10 +1390,10 @@ class SettingsPage extends ConsumerWidget {
                     );
                     if (context.mounted) {
                       Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Path copied to clipboard'),
-                        ),
+                      _notify(
+                        context,
+                        'Path copied to clipboard.',
+                        kind: AppNotificationKind.success,
                       );
                     }
                   },
@@ -1400,12 +1422,10 @@ class SettingsPage extends ConsumerWidget {
     } catch (e) {
       AppLogger.error('Failed to open settings folder', e);
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to open folder: ${e.toString()}'),
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
+        _notify(
+          context,
+          'Failed to open folder: ${e.toString()}',
+          kind: AppNotificationKind.error,
         );
       }
     }
@@ -1427,8 +1447,11 @@ class SettingsPage extends ConsumerWidget {
 
       if (customPresets.isEmpty) {
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No custom presets to backup')),
+          _notify(
+            context,
+            'There are no custom presets to back up.',
+            kind: AppNotificationKind.warning,
+            title: 'Preset backup',
           );
         }
         return;
@@ -1464,19 +1487,21 @@ class SettingsPage extends ConsumerWidget {
       }
 
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Backed up ${selectedIds.length} presets successfully',
-            ),
-          ),
+        _notify(
+          context,
+          'Backed up ${selectedIds.length} presets successfully.',
+          kind: AppNotificationKind.success,
+          title: 'Preset backup',
         );
       }
     } catch (e) {
       AppLogger.error('Failed to backup presets', e);
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to backup: ${e.toString()}')),
+        _notify(
+          context,
+          'Failed to back up presets: ${e.toString()}',
+          kind: AppNotificationKind.error,
+          title: 'Preset backup',
         );
       }
     }
@@ -1536,17 +1561,21 @@ class SettingsPage extends ConsumerWidget {
       );
 
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Restored $restoredCount presets successfully'),
-          ),
+        _notify(
+          context,
+          'Restored $restoredCount presets successfully.',
+          kind: AppNotificationKind.success,
+          title: 'Preset restore',
         );
       }
     } catch (e) {
       AppLogger.error('Failed to restore presets', e);
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to restore: ${e.toString()}')),
+        _notify(
+          context,
+          'Failed to restore presets: ${e.toString()}',
+          kind: AppNotificationKind.error,
+          title: 'Preset restore',
         );
       }
     }

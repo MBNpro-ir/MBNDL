@@ -13,6 +13,16 @@ class VideoFormat {
   final double? vbr; // Video bitrate
   final double? abr; // Audio bitrate
   final String? formatNote;
+  final String? format;
+  final String? container;
+  final String? protocol;
+  final String? dynamicRange;
+  final String? language;
+  final double? languagePreference;
+  final int? audioChannels;
+  final double? audioSampleRate;
+  final double? quality;
+  final double? sourcePreference;
   final bool hasVideo;
   final bool hasAudio;
 
@@ -31,6 +41,16 @@ class VideoFormat {
     this.vbr,
     this.abr,
     this.formatNote,
+    this.format,
+    this.container,
+    this.protocol,
+    this.dynamicRange,
+    this.language,
+    this.languagePreference,
+    this.audioChannels,
+    this.audioSampleRate,
+    this.quality,
+    this.sourcePreference,
     this.hasVideo = false,
     this.hasAudio = false,
   });
@@ -85,6 +105,16 @@ class VideoFormat {
       vbr: (json['vbr'] as num?)?.toDouble(),
       abr: (json['abr'] as num?)?.toDouble(),
       formatNote: optionalText('format_note'),
+      format: optionalText('format'),
+      container: optionalText('container'),
+      protocol: optionalText('protocol'),
+      dynamicRange: optionalText('dynamic_range'),
+      language: optionalText('language'),
+      languagePreference: (json['language_preference'] as num?)?.toDouble(),
+      audioChannels: positiveInt('audio_channels'),
+      audioSampleRate: (json['asr'] as num?)?.toDouble(),
+      quality: (json['quality'] as num?)?.toDouble(),
+      sourcePreference: (json['source_preference'] as num?)?.toDouble(),
       hasVideo:
           isPresent(vcodec) || isPresent(videoExt) || directVideoContainer,
       hasAudio:
@@ -131,12 +161,16 @@ class VideoFormat {
     final size = filesize ?? filesizeApprox;
     if (size == null) return 'Unknown size';
 
-    if (size < 1024) return '$size B';
-    if (size < 1024 * 1024) return '${(size / 1024).toStringAsFixed(1)} KB';
-    if (size < 1024 * 1024 * 1024) {
-      return '${(size / (1024 * 1024)).toStringAsFixed(1)} MB';
+    final prefix = filesize == null ? '~' : '';
+
+    if (size < 1024) return '$prefix$size B';
+    if (size < 1024 * 1024) {
+      return '$prefix${(size / 1024).toStringAsFixed(1)} KB';
     }
-    return '${(size / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+    if (size < 1024 * 1024 * 1024) {
+      return '$prefix${(size / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    return '$prefix${(size / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
   }
 
   String get bitrateDisplay {
@@ -177,6 +211,73 @@ class VideoFormat {
   bool get hasValidFps {
     return fps != null && fps! > 0;
   }
+
+  String? get languageBadge {
+    final code = language?.trim();
+    if (code == null || code.isEmpty) return null;
+    return '${_languageFlag(code)} ${code.toUpperCase().replaceAll('_', '-')}';
+  }
+
+  String? get sampleRateDisplay {
+    final value = audioSampleRate;
+    if (value == null || value <= 0) return null;
+    if (value >= 1000) {
+      final khz = value / 1000;
+      return '${khz == khz.roundToDouble() ? khz.round() : khz.toStringAsFixed(1)} kHz';
+    }
+    return '${value.round()} Hz';
+  }
+
+  String? get channelDisplay {
+    final channels = audioChannels;
+    if (channels == null || channels <= 0) return null;
+    return switch (channels) {
+      1 => 'Mono · 1 ch',
+      2 => 'Stereo · 2 ch',
+      _ => '$channels channels',
+    };
+  }
+}
+
+String _languageFlag(String language) {
+  final normalized = language.replaceAll('_', '-');
+  final parts = normalized.split('-');
+  String? region;
+  for (final part in parts.skip(1)) {
+    if (RegExp(r'^[A-Za-z]{2}$').hasMatch(part)) {
+      region = part.toUpperCase();
+      break;
+    }
+  }
+  region ??= switch (parts.first.toLowerCase()) {
+    'fa' => 'IR',
+    'en' => 'US',
+    'ar' => 'SA',
+    'de' => 'DE',
+    'fr' => 'FR',
+    'es' => 'ES',
+    'pt' => 'BR',
+    'ru' => 'RU',
+    'ja' => 'JP',
+    'ko' => 'KR',
+    'zh' => 'CN',
+    'tr' => 'TR',
+    'hi' => 'IN',
+    'ur' => 'PK',
+    'it' => 'IT',
+    'nl' => 'NL',
+    'pl' => 'PL',
+    'uk' => 'UA',
+    'id' => 'ID',
+    'vi' => 'VN',
+    'th' => 'TH',
+    'he' => 'IL',
+    _ => null,
+  };
+  if (region == null || region.length != 2) return '🌐';
+  final first = 0x1F1E6 + region.codeUnitAt(0) - 0x41;
+  final second = 0x1F1E6 + region.codeUnitAt(1) - 0x41;
+  return String.fromCharCodes([first, second]);
 }
 
 class FormatGroup {

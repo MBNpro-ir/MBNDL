@@ -59,6 +59,26 @@ final appRouter = GoRouter(
   ],
 );
 
+Future<void> openAppUpdateSettings() async {
+  appRouter.go('/settings');
+  for (final delay in const [80, 180, 320]) {
+    await Future<void>.delayed(Duration(milliseconds: delay));
+    final context = appUpdatesSettingsSectionKey.currentContext;
+    if (context == null || !context.mounted) continue;
+    final reduceMotion =
+        MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    await Scrollable.ensureVisible(
+      context,
+      alignment: 0.12,
+      duration: reduceMotion
+          ? Duration.zero
+          : const Duration(milliseconds: 420),
+      curve: Curves.easeOutCubic,
+    );
+    return;
+  }
+}
+
 Page _buildPageWithAnimation({
   required BuildContext context,
   required GoRouterState state,

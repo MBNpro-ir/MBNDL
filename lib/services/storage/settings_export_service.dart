@@ -44,7 +44,6 @@ class SettingsExportService {
     'app_update_background_downloads',
     'surface_style',
     'liquid_glass_enabled',
-    'glass_quality',
     'glass_blur',
     'glass_opacity',
     'glass_vibrancy',

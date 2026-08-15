@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/utils/floating_navigation_insets.dart';
+import '../../../core/notifications/app_notification.dart';
 import '../../../services/downloader/download_error_mapper.dart';
 import '../../../services/downloader/download_service.dart';
 import '../../../services/logger/app_logger.dart';
@@ -205,6 +206,16 @@ class _HomePageState extends ConsumerState<HomePage> {
                   'vbr': format.vbr,
                   'abr': format.abr,
                   'format_note': format.formatNote,
+                  'format': format.format,
+                  'container': format.container,
+                  'protocol': format.protocol,
+                  'dynamic_range': format.dynamicRange,
+                  'language': format.language,
+                  'language_preference': format.languagePreference,
+                  'audio_channels': format.audioChannels,
+                  'asr': format.audioSampleRate,
+                  'quality': format.quality,
+                  'source_preference': format.sourcePreference,
                 },
               )
               .toList(),
@@ -423,13 +434,11 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   void _showMessage(String message, {bool isError = false}) {
     if (!mounted) return;
-    final colors = Theme.of(context).colorScheme;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: isError ? colors.error : colors.inverseSurface,
-        showCloseIcon: true,
-      ),
+    AppNotificationCenter.show(
+      context,
+      kind: isError ? AppNotificationKind.error : AppNotificationKind.info,
+      title: isError ? 'Download needs attention' : 'MBNDL',
+      message: message,
     );
   }
 
