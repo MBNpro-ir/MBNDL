@@ -2,6 +2,18 @@
 
 All notable user-facing and developer-facing changes are documented in this file.
 
+## 🎵 1.0.9 — 2026-08-15
+
+### 🎧 Reliable Spotify matching
+
+- 🔎 Kept the artist-aware YouTube search as the preferred Spotify match and added a title-only fallback when distributor or channel names differ.
+- 📱 Applied the same fallback flow to the native Android yt-dlp bridge and the desktop yt-dlp engine.
+- 🔗 Locked the matched YouTube result before queuing so format IDs and the final download always refer to the same media.
+- 🧠 Prevented a single Spotify track from being presented as a playlist merely because yt-dlp returns search results inside a playlist envelope.
+- 💬 Added a clear user-facing message when Spotify metadata is available but no playable audio match can be found.
+- 🧪 Added a live regression test for the reported Spotify track and verified that downloadable audio formats are returned.
+- 🏷️ Set the application version to `1.0.9+9`.
+
 ## 🩹 1.0.8 — 2026-08-15
 
 ### 📱 Android format inspection
