@@ -489,11 +489,19 @@ class DownloadService {
     // Determine download type from settings
     final downloadType = settings.downloadType ?? 'combined';
     final isAudioOnly = downloadType == 'audio' || settings.extractAudio;
-    final isSeparateDownload = downloadType == 'separate';
+    final selectedFormatId = settings.selectedFormatId ?? '';
+    final shouldMergeStreams =
+        !isAudioOnly && selectedFormatId.split('+').length == 2;
 
     // Build yt-dlp args with paths template for organized file storage
     final args = <String>[
       ...settings.toYtDlpArgs(),
+      if (shouldMergeStreams) ...[
+        // yt-dlp performs the video+audio download and FFmpeg merge in this
+        // single invocation. Never retain the two intermediate streams.
+        '--no-keep-video',
+        '--no-keep-fragments',
+      ],
       if (Platform.isWindows) '--windows-filenames',
       '--trim-filenames',
       '180',
@@ -525,73 +533,7 @@ class DownloadService {
       cookieFilePath = await CookieStorageService.instance
           .materializeSelectedCookieForUrl(downloadUrl);
 
-      // For separate video+audio downloads, download each file individually
-      if (isSeparateDownload) {
-        // Split the format string
-        final formats = settings.selectedFormatId!.split('+');
-        if (formats.length == 2) {
-          final videoFormat = formats[0];
-          final audioFormat = formats[1];
-
-          // Clear args and rebuild for separate downloads
-          args.clear();
-
-          // Download video only (without audio) to Video folder
-          args.addAll([
-            ...settings.toYtDlpArgs(),
-            if (Platform.isWindows) '--windows-filenames',
-            '--trim-filenames',
-            '180',
-            '-f',
-            videoFormat,
-            '--newline',
-            '--progress',
-            '--progress-template',
-            'download:MBN_PROGRESS:%(progress._percent_str)s',
-            '--print',
-            'after_move:MBN_FILE:%(filepath)j',
-            '-P',
-            'temp:${tempDir.path}',
-            '-P',
-            'home:${videoDir.path}',
-            '-o',
-            settings.outputTemplate.replaceFirst('.%(ext)s', '_video.%(ext)s'),
-          ]);
-
-          // Add subtitle/thumbnail config if needed
-          if (settings.downloadSubtitlesEnabled) {
-            args.addAll([
-              '--write-subs',
-              if (settings.autoSubtitles) '--write-auto-subs',
-              '--sub-langs',
-              settings.subtitleLanguages,
-              '--sub-format',
-              'best',
-              '--convert-subs',
-              settings.subtitleFormat,
-              '-P',
-              'subtitle:${videoDir.path}',
-            ]);
-          }
-
-          if (settings.downloadThumbnailEnabled) {
-            args.addAll([
-              '--write-thumbnail',
-              '--convert-thumbnails',
-              'jpg',
-              '-P',
-              'thumbnail:${coverDir.path}',
-            ]);
-          }
-
-          args.add(downloadUrl);
-
-          // Audio will be downloaded after video completes (handled in exitCode == 0 section)
-          AppLogger.info(
-            'Separate download mode: Video format $videoFormat, Audio format $audioFormat',
-          );
-        }
-      } else if (isAudioOnly) {
+      if (isAudioOnly) {
         // Audio-only goes to Audio folder
         args.addAll([
           '-P',
@@ -609,32 +551,29 @@ class DownloadService {
         ]);
       }
 
-      // Add subtitle/thumbnail config for non-separate downloads
-      if (!isSeparateDownload) {
-        if (settings.downloadSubtitlesEnabled) {
-          args.addAll([
-            '--write-subs',
-            if (settings.autoSubtitles) '--write-auto-subs',
-            '--sub-langs', settings.subtitleLanguages,
-            '--sub-format', 'best',
-            '--convert-subs', settings.subtitleFormat,
-            '-P', 'subtitle:${videoDir.path}', // Save subtitles with video
-          ]);
-        }
-
-        if (settings.downloadThumbnailEnabled) {
-          args.addAll([
-            '--write-thumbnail',
-            '--convert-thumbnails', 'jpg',
-            '-P', 'thumbnail:${coverDir.path}', // Save covers in Cover folder
-          ]);
-        }
-
-        args.add(downloadUrl);
+      if (settings.downloadSubtitlesEnabled) {
+        args.addAll([
+          '--write-subs',
+          if (settings.autoSubtitles) '--write-auto-subs',
+          '--sub-langs', settings.subtitleLanguages,
+          '--sub-format', 'best',
+          '--convert-subs', settings.subtitleFormat,
+          '-P', 'subtitle:${videoDir.path}', // Save subtitles with video
+        ]);
       }
 
-      // Settings rebuilt for separate streams above; add runtime, cookies and
-      // FFmpeg immediately before the URL so all modes share the same engine.
+      if (settings.downloadThumbnailEnabled) {
+        args.addAll([
+          '--write-thumbnail',
+          '--convert-thumbnails', 'jpg',
+          '-P', 'thumbnail:${coverDir.path}', // Save covers in Cover folder
+        ]);
+      }
+
+      args.add(downloadUrl);
+
+      // Add runtime, cookies and FFmpeg immediately before the URL so all
+      // modes, including Smart Merge, share the same engine configuration.
       final sharedArgs = <String>[];
       if (!args.contains('--js-runtimes') &&
           !args.contains('--no-js-runtimes')) {
@@ -764,134 +703,6 @@ class DownloadService {
       }
 
       if (exitCode == 0) {
-        // If this was a separate video+audio download, now download the audio
-        if (isSeparateDownload && settings.selectedFormatId!.contains('+')) {
-          final formats = settings.selectedFormatId!.split('+');
-          if (formats.length == 2) {
-            final audioFormat = formats[1];
-
-            AppLogger.info(
-              'Video download complete, starting audio download...',
-            );
-
-            // Build audio download args
-            final audioArgs = <String>[
-              ...settings.toExtractionArgs(),
-              if (Platform.isWindows) '--windows-filenames',
-              '--trim-filenames',
-              '180',
-              '-f',
-              audioFormat,
-              '--newline',
-              '--progress',
-              '--progress-template',
-              'download:MBN_PROGRESS:%(progress._percent_str)s',
-              '--print',
-              'after_move:MBN_FILE:%(filepath)j',
-              '-P',
-              'temp:${tempDir.path}',
-              '-P',
-              'home:${audioDir.path}',
-              '-o',
-              settings.outputTemplate.replaceFirst(
-                '.%(ext)s',
-                '_audio.%(ext)s',
-              ),
-              ...sharedArgs,
-              downloadUrl,
-            ];
-
-            AppLogger.debug(
-              'Audio download args: ${LogSanitizer.commandArgs(audioArgs)}',
-            );
-
-            // Start audio download process
-            final audioProcess = await Process.start(
-              _ytDlpPath!,
-              audioArgs,
-              environment: environment,
-            );
-            _activeDownloads[item.id!] = audioProcess;
-
-            // Update progress to show audio is downloading
-            updatedItem = updatedItem.copyWith(
-              progress: 50.0, // Video done, now audio
-            );
-            onUpdate(updatedItem);
-
-            String? audioFilePath;
-
-            // Monitor audio download progress
-            audioProcess.stdout
-                .transform(textDecoder)
-                .transform(const LineSplitter())
-                .listen((line) {
-                  AppLogger.toolOutput(
-                    'yt-dlp audio',
-                    line,
-                    fallback: LogLevel.trace,
-                  );
-
-                  // Extract audio progress (map it to 50-100% range)
-                  final progressMatch = progressRegex.firstMatch(line);
-                  if (progressMatch != null) {
-                    final audioProgress =
-                        double.tryParse(progressMatch.group(1)!) ?? 0.0;
-                    final totalProgress = 50.0 + (audioProgress / 2); // 50-100%
-                    updatedItem = updatedItem.copyWith(progress: totalProgress);
-                    onUpdate(updatedItem);
-                  }
-
-                  // Extract audio file path
-                  if (line.startsWith('MBN_FILE:')) {
-                    final encodedPath = line
-                        .substring('MBN_FILE:'.length)
-                        .trim();
-                    try {
-                      audioFilePath = jsonDecode(encodedPath) as String;
-                    } catch (_) {
-                      audioFilePath = encodedPath.replaceAll('"', '');
-                    }
-                    AppLogger.debug('Audio file path: $audioFilePath');
-                  }
-                });
-
-            audioProcess.stderr
-                .transform(textDecoder)
-                .transform(const LineSplitter())
-                .listen((line) {
-                  AppLogger.toolOutput(
-                    'yt-dlp audio stderr',
-                    line,
-                    fallback: LogLevel.warning,
-                  );
-                });
-
-            // Wait for audio download to complete
-            final audioExitCode = await audioProcess.exitCode;
-            _activeDownloads.remove(item.id);
-
-            if (_cancelledDownloads.remove(item.id)) {
-              updatedItem = updatedItem.copyWith(
-                status: DownloadStatus.cancelled,
-                errorMessage: 'Download cancelled by user',
-              );
-              await DatabaseService.instance.updateDownload(updatedItem);
-              onUpdate(updatedItem);
-              return;
-            }
-
-            if (audioExitCode != 0) {
-              AppLogger.error(
-                'Audio download failed with exit code: $audioExitCode',
-              );
-              // Continue anyway, video was successful
-            } else {
-              AppLogger.info('Audio download completed successfully');
-            }
-          }
-        }
-
         // Download successful
         File? downloadedFile;
         int? fileSize;

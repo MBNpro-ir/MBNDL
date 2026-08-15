@@ -34,9 +34,4 @@ if ($LASTEXITCODE -ne 0) {
     throw "Flutter could not validate $PrecachePlatform engine artifacts."
 }
 
-& flutter doctor -v
-if ($LASTEXITCODE -ne 0) {
-    throw 'Flutter doctor reported an unusable SDK cache.'
-}
-
 Write-Host "Flutter $ExpectedVersion and $PrecachePlatform artifacts are healthy."

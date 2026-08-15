@@ -15,6 +15,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_theme_mode.dart';
+import '../../../core/utils/floating_navigation_insets.dart';
 import '../../../shared/providers/settings_provider.dart';
 import '../../../shared/providers/cookie_provider.dart';
 import '../../../shared/providers/app_update_provider.dart';
@@ -302,7 +303,12 @@ class SettingsPage extends ConsumerWidget {
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 1380),
               child: ListView(
-                padding: EdgeInsets.fromLTRB(pagePadding, 12, pagePadding, 32),
+                padding: EdgeInsets.fromLTRB(
+                  pagePadding,
+                  12,
+                  pagePadding,
+                  32 + floatingNavigationScrollClearance(context),
+                ),
                 children: [
                   Card(
                     color: colors.primaryContainer,

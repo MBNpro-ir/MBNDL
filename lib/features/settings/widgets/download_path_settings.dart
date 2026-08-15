@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/utils/floating_navigation_insets.dart';
 import '../../../services/logger/app_logger.dart';
 import '../../../services/storage/download_path_service.dart';
 import '../../../shared/providers/settings_provider.dart';
@@ -104,7 +105,12 @@ class _DownloadPathSettingsState extends ConsumerState<DownloadPathSettings> {
     return Scaffold(
       appBar: AppBar(title: const Text('Download location')),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.fromLTRB(
+          16,
+          16,
+          16,
+          16 + floatingNavigationScrollClearance(context),
+        ),
         children: [
           Card(
             clipBehavior: Clip.antiAlias,

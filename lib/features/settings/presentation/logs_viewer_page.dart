@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:intl/intl.dart';
 
+import '../../../core/utils/floating_navigation_insets.dart';
 import '../../../services/logger/app_log_entry.dart';
 import '../../../services/logger/app_logger.dart';
 
@@ -209,7 +210,12 @@ class _LogsViewerPageState extends State<LogsViewerPage> {
                 : filtered.isEmpty
                 ? _EmptyLogs(hasLogs: _entries.isNotEmpty)
                 : ListView.builder(
-                    padding: const EdgeInsets.all(16),
+                    padding: EdgeInsets.fromLTRB(
+                      16,
+                      16,
+                      16,
+                      16 + floatingNavigationScrollClearance(context),
+                    ),
                     itemCount: filtered.length,
                     itemBuilder: (context, index) =>
                         _LogEventCard(

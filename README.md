@@ -88,7 +88,7 @@ On Android and Windows, MBNDL checks GitHub Releases after startup and can downl
 
 ### ✨ Appearance, backups, and diagnostics
 
-**Settings → Appearance** offers the aqua Material 3 Expressive design, Material You dynamic colors, light/dark/AMOLED modes, floating navigation, and reduced-motion support. The optional **Liquid Glass (Beta)** renderer, inspired by [Apple’s Liquid Glass design language](https://developer.apple.com/documentation/technologyoverviews/liquid-glass), adds live blur, adaptive quality, theme-derived surface tint, opacity, vibrancy, lens-edge refraction, chromatic edging, and depth. It is a portable Flutter interpretation rather than Apple’s platform renderer. Efficient or Adaptive quality is recommended on older phones because live blur uses extra GPU and battery.
+**Settings → Appearance** offers the aqua Material 3 Expressive design, Material You dynamic colors, light/dark/AMOLED modes, floating navigation, and System/Full/Reduced motion choices. Page cards and controls remain visible while scrolling behind the floating capsule, where a short fade preserves contrast; a transparent tail exists only at the end of the scroll so the final action can stop above the bar. With Liquid Glass disabled, the compact Material capsule stays translucent without optical effects. Optional **Liquid Glass (Beta)** is deliberately limited to the bottom navigation: Android Impeller uses a GPU fragment shader for live refraction, lens magnification, optical borders, chromatic dispersion, adaptive tint, and a morphing selection pill; Windows uses the stable single-lens Skia fallback. Page surfaces remain ordinary readable Material. This is a portable Flutter interpretation inspired by [Apple’s Liquid Glass design language](https://developer.apple.com/documentation/technologyoverviews/liquid-glass), not Apple’s private renderer. Efficient or Adaptive quality is recommended on older phones.
 
 Settings backups now use a versioned schema and include yt-dlp settings, Quick Presets/custom presets, appearance, close behavior, log detail, and app-update preferences. YouTube cookies, proxy credentials, history, permissions, device paths, and free-form command arguments remain local for safety. Imports are validated before any value is written and take effect immediately.
 
@@ -161,7 +161,7 @@ MBNDL یک دانلود منیجر ساده و مدرن بر پایهٔ yt-dlp �
 
 ### ✨ ظاهر، بکاپ و لاگ
 
-در مسیر **Settings → Appearance** طراحی آبی‌آکوا Material 3 Expressive، رنگ پویا Material You، حالت روشن/تیره/AMOLED، نوار شناور و Reduced Motion در دسترس است. گزینهٔ آزمایشی **Liquid Glass** با الهام از [زبان طراحی Liquid Glass اپل](https://developer.apple.com/documentation/technologyoverviews/liquid-glass)، افکت Blur زنده، کیفیت Adaptive، Tint هماهنگ با رنگ تم، Opacity، Vibrancy، شکست لبهٔ لنزی، Chromatic edge و Depth را اضافه می‌کند. این یک پیاده‌سازی قابل‌حمل Flutter است و موتور اختصاصی اپل نیست. برای گوشی‌های قدیمی حالت Adaptive یا Efficient پیشنهاد می‌شود.
+در مسیر **Settings → Appearance** طراحی آبی‌آکوا Material 3 Expressive، رنگ پویا Material You، حالت روشن/تیره/AMOLED، نوار شناور و انتخاب‌های System/Full/Reduced Motion در دسترس است. کارت‌ها و کنترل‌های صفحه هنگام اسکرول پشت کپسول شناور دیده می‌شوند و Fade کوتاه خوانایی را حفظ می‌کند؛ فقط انتهای اسکرول یک Tail شفاف دارد تا آخرین ردیف بتواند کاملاً بالای نوار بایستد. با خاموش بودن Liquid Glass نیز کپسول Material جمع‌وجور و نیمه‌شفاف باقی می‌ماند، اما افکت اپتیکی ندارد. گزینهٔ آزمایشی **Liquid Glass** عمداً فقط روی نوار پایین موبایل اعمال می‌شود؛ Android/Impeller با Fragment Shader شکست زنده، بزرگ‌نمایی لنزی، لبهٔ نوری، جدایش رنگ، Tint تطبیقی و Pill مورف‌شونده را می‌سازد و Windows از renderer تک‌لنز پایدار Skia استفاده می‌کند. سطح صفحه‌ها همچنان Material خوانا باقی می‌ماند. این پیاده‌سازی قابل‌حمل با الهام از [زبان طراحی Liquid Glass اپل](https://developer.apple.com/documentation/technologyoverviews/liquid-glass) است و موتور خصوصی اپل نیست. برای گوشی‌های قدیمی حالت Adaptive یا Efficient پیشنهاد می‌شود.
 
 Export نسخه‌بندی‌شدهٔ تنظیمات حالا تنظیمات yt-dlp، پریست‌ها، ظاهر، رفتار بستن ویندوز، سطح لاگ و آپدیتر را همگام نگه می‌دارد. کوکی‌های YouTube، رمز پروکسی، History، Permission، مسیرهای مخصوص دستگاه و آرگومان‌های آزاد عمداً منتقل نمی‌شوند. Import پیش از نوشتن کامل بررسی می‌شود و تغییرات بلافاصله اعمال می‌شوند.
 
@@ -185,7 +185,7 @@ OAuth یوتیوب دیگر توسط yt-dlp پشتیبانی نمی‌شود و 
 
 | Area | Implementation |
 |---|---|
-| UI | Flutter Material 3 Expressive / Material You / native BackdropFilter Liquid Glass renderer |
+| UI | Flutter Material 3 Expressive / Material You / shader-based Liquid Glass bottom navigation |
 | State | Riverpod |
 | Navigation | GoRouter |
 | Downloads library | SQLite (`sqflite` / `sqflite_common_ffi`) |
@@ -196,7 +196,7 @@ OAuth یوتیوب دیگر توسط yt-dlp پشتیبانی نمی‌شود و 
 | Android downloads | `youtubedl-android`, foreground service, and MediaStore publication |
 | Application ID | `com.mbn.dl` |
 
-The glass renderer uses clipped Flutter [`BackdropFilter`](https://api.flutter.dev/flutter/widgets/BackdropFilter-class.html) surfaces and adaptive blur limits. Flutter documents backdrop blur as relatively expensive, which is why MBNDL exposes performance presets and keeps Material Expressive as the default.
+The bottom-navigation glass renderer uses fragment shaders for live backdrop refraction on supported Impeller devices and a stable single-lens Skia fallback on Windows. MBNDL exposes performance presets and keeps every page/card surface on Material 3; only the compact navigation controls enter the glass rendering pipeline.
 
 ### How a download works
 
@@ -260,17 +260,16 @@ tool/refresh_windows_bootstrap.dart Minimal FFmpeg bootstrap refresher
 
 ### ♻️ CI cache policy
 
-Every push to `main` builds Windows x64 and Android ARM32/ARM64 and refreshes
-shared Flutter SDK and pub caches in the default-branch scope. Version tags can
-restore those caches; caches created only by one tag cannot be reused by a
-different tag because GitHub isolates tag cache scopes.
+The release workflow runs only for a `v*` tag; pushing `main` does not start a
+duplicate build. Windows x64 and Android ARM32/ARM64 restore the shared Flutter
+SDK and pub caches before compiling.
 
-The workflow validates the restored Flutter version, Dart executable, target
-engine artifacts, and `flutter doctor` state before compiling. If setup or the
+The workflow performs only the cache checks needed for compilation: the exact
+Flutter version, Dart executable, and target engine artifacts. If setup or the
 health check fails, only the matching Flutter and pub cache keys are deleted,
 the SDK is installed again, and the repaired cache is saved at job completion.
-The workflow can also be run manually with `repair_cache` enabled to force a
-clean cache generation.
+Tests, analysis, `flutter doctor`, and a second `main` build are intentionally
+not part of the tagged packaging workflow.
 
 ### 🤝 Contributing
 

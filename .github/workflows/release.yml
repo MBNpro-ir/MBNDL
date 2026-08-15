@@ -2,17 +2,8 @@ name: 🚀 Build and publish release
 
 on:
   push:
-    branches:
-      - main
     tags:
       - "v*"
-  workflow_dispatch:
-    inputs:
-      repair_cache:
-        description: Delete and rebuild the shared Flutter/pub caches
-        required: false
-        default: false
-        type: boolean
 
 permissions:
   actions: write
@@ -35,7 +26,6 @@ jobs:
         with:
           flutter-version: "3.44.6"
           precache-platform: windows
-          force-repair: ${{ github.event_name == 'workflow_dispatch' && inputs.repair_cache || false }}
 
       - name: Compile Windows x64
         run: flutter build windows --release
@@ -74,7 +64,6 @@ jobs:
         with:
           flutter-version: "3.44.6"
           precache-platform: android
-          force-repair: ${{ github.event_name == 'workflow_dispatch' && inputs.repair_cache || false }}
 
       - name: Configure persistent Android release signing
         env:

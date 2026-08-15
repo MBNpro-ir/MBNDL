@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../../core/theme/glass_surface.dart';
-
 class SettingsSection extends StatelessWidget {
   final String title;
   final IconData icon;
@@ -17,8 +15,7 @@ class SettingsSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return GlassSurface(
-      borderRadius: BorderRadius.circular(24),
+    return Card(
       child: ListTileTheme(
         dense: true,
         minLeadingWidth: 28,

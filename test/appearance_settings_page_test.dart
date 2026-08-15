@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mbn_downloader/core/theme/app_appearance.dart';
 import 'package:mbn_downloader/core/theme/app_theme.dart';
 import 'package:mbn_downloader/features/settings/presentation/appearance_settings_page.dart';
+import 'package:mbn_downloader/shared/providers/settings_provider.dart';
 import 'package:mbn_downloader/services/storage/settings_export_service.dart';
 import 'package:mbn_downloader/services/storage/storage_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -67,6 +68,25 @@ void main() {
       scrollable: find.byType(Scrollable).first,
     );
     expect(find.text('Lens refraction'), findsOneWidget);
+
+    await tester.scrollUntilVisible(
+      find.text('Reduced motion'),
+      320,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.text('Reduced motion'));
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(AppearanceSettingsPage)),
+    );
+    expect(
+      container.read(appearanceSettingsProvider).motionMode,
+      AppMotionMode.reduced,
+    );
+    expect(
+      find.byKey(const ValueKey('motion-mode-reduced-selected')),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
   });
 }

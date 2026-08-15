@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/utils/floating_navigation_insets.dart';
 import '../../../services/downloader/download_error_mapper.dart';
 import '../../../services/downloader/download_service.dart';
 import '../../../services/logger/app_logger.dart';
@@ -20,7 +21,6 @@ import '../../../shared/providers/recent_links_provider.dart';
 import '../../../shared/providers/settings_provider.dart';
 import '../../../shared/providers/youtube_auth_provider.dart';
 import '../../../shared/utils/media_url_classifier.dart';
-import '../../../core/theme/glass_surface.dart';
 import '../../settings/widgets/quick_preset_selector.dart';
 import 'format_selection_page.dart';
 
@@ -471,6 +471,9 @@ class _HomePageState extends ConsumerState<HomePage> {
               ),
             ),
           ),
+          SliverToBoxAdapter(
+            child: SizedBox(height: floatingNavigationScrollClearance(context)),
+          ),
         ],
       ),
     );
@@ -633,9 +636,7 @@ class _HomePageState extends ConsumerState<HomePage> {
           ),
         );
 
-        return GlassSurface(
-          borderRadius: BorderRadius.circular(28),
-          fallbackColor: colors.surfaceContainerLow,
+        return Card(
           child: wide
               ? IntrinsicHeight(
                   child: Row(

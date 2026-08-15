@@ -226,10 +226,16 @@ class AndroidYtDlpService {
     // Determine download type
     final downloadType = settings.downloadType ?? 'combined';
     final isAudioOnly = downloadType == 'audio' || settings.extractAudio;
+    final selectedFormatId = settings.selectedFormatId ?? '';
+    final shouldMergeStreams =
+        !isAudioOnly && selectedFormatId.split('+').length == 2;
 
     // Preserve option order and repeated flags; several current yt-dlp options
     // (for example --js-runtimes and -P) may legitimately occur more than once.
     final options = <String>[...settings.toYtDlpArgs()];
+    if (shouldMergeStreams) {
+      options.addAll(['--no-keep-video', '--no-keep-fragments']);
+    }
     options.addAll(['--trim-filenames', '180']);
 
     // Add path configuration for organized storage

@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_appearance.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_theme_mode.dart';
-import '../../../core/theme/glass_surface.dart';
+import '../../../core/utils/floating_navigation_insets.dart';
 import '../../../shared/providers/settings_provider.dart';
 import '../widgets/settings_section.dart';
 
@@ -27,69 +27,75 @@ class AppearanceSettingsPage extends ConsumerWidget {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 980),
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 36),
+            padding: EdgeInsets.fromLTRB(
+              16,
+              8,
+              16,
+              36 + floatingNavigationScrollClearance(context),
+            ),
             children: [
-              GlassSurface(
-                borderRadius: BorderRadius.circular(32),
-                padding: const EdgeInsets.all(22),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 52,
-                          height: 52,
-                          decoration: BoxDecoration(
-                            color: colors.primaryContainer,
-                            borderRadius: BorderRadius.circular(18),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(22),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 52,
+                            height: 52,
+                            decoration: BoxDecoration(
+                              color: colors.primaryContainer,
+                              borderRadius: BorderRadius.circular(18),
+                            ),
+                            child: Icon(
+                              Icons.auto_awesome_rounded,
+                              color: colors.onPrimaryContainer,
+                            ),
                           ),
-                          child: Icon(
-                            Icons.auto_awesome_rounded,
-                            color: colors.onPrimaryContainer,
-                          ),
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                settings.surfaceStyle.displayName,
-                                style: Theme.of(context).textTheme.titleLarge
-                                    ?.copyWith(fontWeight: FontWeight.w800),
-                              ),
-                              Text(
-                                settings.liquidGlassEnabled
-                                    ? 'Live blur, tint, light edges, and depth'
-                                    : 'Material 3 Expressive surfaces and motion',
-                                style: TextStyle(
-                                  color: colors.onSurfaceVariant,
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  settings.surfaceStyle.displayName,
+                                  style: Theme.of(context).textTheme.titleLarge
+                                      ?.copyWith(fontWeight: FontWeight.w800),
                                 ),
-                              ),
-                            ],
+                                Text(
+                                  settings.liquidGlassEnabled
+                                      ? 'Shader refraction on the bottom navigation only'
+                                      : 'Material 3 Expressive surfaces and motion',
+                                  style: TextStyle(
+                                    color: colors.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
-                    Wrap(
-                      alignment: WrapAlignment.center,
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        for (final item in const [
-                          (Icons.home_rounded, 'Home'),
-                          (Icons.history_rounded, 'History'),
-                          (Icons.tune_rounded, 'Settings'),
-                        ])
-                          Chip(
-                            avatar: Icon(item.$1, size: 18),
-                            label: Text(item.$2),
-                          ),
-                      ],
-                    ),
-                  ],
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+                      Wrap(
+                        alignment: WrapAlignment.center,
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          for (final item in const [
+                            (Icons.home_rounded, 'Home'),
+                            (Icons.history_rounded, 'History'),
+                            (Icons.tune_rounded, 'Settings'),
+                          ])
+                            Chip(
+                              avatar: Icon(item.$1, size: 18),
+                              label: Text(item.$2),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
               const SizedBox(height: 16),
@@ -118,7 +124,7 @@ class AppearanceSettingsPage extends ConsumerWidget {
                     secondary: const Icon(Icons.blur_on_rounded),
                     title: const Text('Liquid Glass (Beta)'),
                     subtitle: const Text(
-                      'Translucent surfaces with live backdrop refraction',
+                      'Real-time lensing and optical edges on the bottom bar',
                     ),
                     value: settings.liquidGlassEnabled,
                     onChanged: (enabled) => unawaited(
@@ -127,6 +133,9 @@ class AppearanceSettingsPage extends ConsumerWidget {
                           surfaceStyle: enabled
                               ? AppSurfaceStyle.liquidGlass
                               : AppSurfaceStyle.expressive,
+                          floatingNavigation: enabled
+                              ? true
+                              : settings.floatingNavigation,
                         ),
                       ),
                     ),
@@ -135,7 +144,7 @@ class AppearanceSettingsPage extends ConsumerWidget {
                     secondary: const Icon(Icons.space_bar_rounded),
                     title: const Text('Floating navigation'),
                     subtitle: const Text(
-                      'Use an elevated, rounded navigation surface',
+                      'Float the bottom bar above content without hiding it',
                     ),
                     value: settings.floatingNavigation,
                     onChanged: (value) => unawaited(
@@ -181,7 +190,7 @@ class AppearanceSettingsPage extends ConsumerWidget {
                         Icons.palette_outlined,
                         color: _previewColor(themeColor),
                       ),
-                      title: const Text('Surface tint'),
+                      title: const Text('Navigation tint'),
                       subtitle: Text(
                         'Follows ${AppTheme.getThemeColorName(themeColor)} color source',
                       ),
@@ -201,7 +210,7 @@ class AppearanceSettingsPage extends ConsumerWidget {
                     ),
                     _GlassSlider(
                       icon: Icons.opacity_rounded,
-                      title: 'Surface opacity',
+                      title: 'Navigation opacity',
                       value: settings.glassOpacity,
                       min: 0.2,
                       max: 0.9,
@@ -267,11 +276,11 @@ class AppearanceSettingsPage extends ConsumerWidget {
                       color: colors.onTertiaryContainer,
                     ),
                     title: Text(
-                      'Live glass uses more GPU and battery.',
+                      'The shader runs only on the bottom navigation.',
                       style: TextStyle(color: colors.onTertiaryContainer),
                     ),
                     subtitle: Text(
-                      'Adaptive or Efficient quality is recommended on older phones.',
+                      'Adaptive or Efficient quality is recommended on older phones; Windows uses the stable single-lens Skia renderer.',
                       style: TextStyle(
                         color: colors.onTertiaryContainer.withValues(
                           alpha: 0.8,
@@ -286,24 +295,26 @@ class AppearanceSettingsPage extends ConsumerWidget {
                 title: 'Motion',
                 icon: Icons.animation_rounded,
                 children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                    child: SegmentedButton<AppMotionMode>(
-                      segments: [
-                        for (final mode in AppMotionMode.values)
-                          ButtonSegment(
-                            value: mode,
-                            label: Text(mode.displayName),
-                          ),
-                      ],
-                      selected: {settings.motionMode},
-                      onSelectionChanged: (selection) => unawaited(
-                        notifier.update(
-                          settings.copyWith(motionMode: selection.single),
-                        ),
+                  for (final mode in AppMotionMode.values)
+                    ListTile(
+                      key: ValueKey('motion-mode-${mode.name}'),
+                      selected: settings.motionMode == mode,
+                      leading: Icon(_motionIcon(mode)),
+                      title: Text(mode.displayName),
+                      subtitle: Text(_motionDescription(mode)),
+                      trailing: settings.motionMode == mode
+                          ? Icon(
+                              Icons.check_circle_rounded,
+                              key: ValueKey(
+                                'motion-mode-${mode.name}-selected',
+                              ),
+                              color: colors.primary,
+                            )
+                          : const Icon(Icons.circle_outlined),
+                      onTap: () => unawaited(
+                        notifier.update(settings.copyWith(motionMode: mode)),
                       ),
                     ),
-                  ),
                 ],
               ),
               const SizedBox(height: 16),
@@ -319,6 +330,20 @@ class AppearanceSettingsPage extends ConsumerWidget {
       ),
     );
   }
+
+  IconData _motionIcon(AppMotionMode mode) => switch (mode) {
+    AppMotionMode.system => Icons.settings_suggest_outlined,
+    AppMotionMode.full => Icons.animation_rounded,
+    AppMotionMode.reduced => Icons.motion_photos_off_outlined,
+  };
+
+  String _motionDescription(AppMotionMode mode) => switch (mode) {
+    AppMotionMode.system =>
+      'Follow the Android or Windows accessibility preference.',
+    AppMotionMode.full => 'Keep page and navigation animations enabled.',
+    AppMotionMode.reduced =>
+      'Remove page transitions and make navigation changes immediate.',
+  };
 
   Future<void> _selectThemeMode(
     BuildContext context,

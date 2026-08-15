@@ -104,12 +104,10 @@ class AppTheme {
   }) {
     final radius = BorderRadius.circular(24);
     final compactRadius = BorderRadius.circular(18);
-    final glass = appearance.liquidGlassEnabled;
-
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
-      scaffoldBackgroundColor: glass ? Colors.transparent : scheme.surface,
+      scaffoldBackgroundColor: scheme.surface,
       canvasColor: scheme.surface,
       splashFactory: InkSparkle.splashFactory,
       visualDensity: VisualDensity.standard,
@@ -117,7 +115,7 @@ class AppTheme {
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: false,
-        backgroundColor: glass ? Colors.transparent : scheme.surface,
+        backgroundColor: scheme.surface,
         foregroundColor: scheme.onSurface,
         surfaceTintColor: Colors.transparent,
         titleTextStyle: TextStyle(
@@ -130,32 +128,24 @@ class AppTheme {
       cardTheme: CardThemeData(
         margin: EdgeInsets.zero,
         elevation: 0,
-        color: glass
-            ? scheme.surfaceContainerLow.withValues(alpha: 0.68)
-            : scheme.surfaceContainerLow,
+        color: scheme.surfaceContainerLow,
         surfaceTintColor: Colors.transparent,
         clipBehavior: Clip.antiAlias,
         shape: RoundedRectangleBorder(
           borderRadius: radius,
-          side: glass
-              ? BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.42))
-              : BorderSide.none,
+          side: BorderSide.none,
         ),
       ),
       dialogTheme: DialogThemeData(
         elevation: 0,
-        backgroundColor: glass
-            ? scheme.surfaceContainerHigh.withValues(alpha: 0.88)
-            : scheme.surfaceContainerHigh,
+        backgroundColor: scheme.surfaceContainerHigh,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
       ),
       bottomSheetTheme: BottomSheetThemeData(
         elevation: 0,
         showDragHandle: true,
-        backgroundColor: glass
-            ? scheme.surfaceContainerLow.withValues(alpha: 0.9)
-            : scheme.surfaceContainerLow,
+        backgroundColor: scheme.surfaceContainerLow,
         surfaceTintColor: Colors.transparent,
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
@@ -164,9 +154,7 @@ class AppTheme {
       navigationBarTheme: NavigationBarThemeData(
         height: 72,
         elevation: 0,
-        backgroundColor: glass
-            ? scheme.surfaceContainer.withValues(alpha: 0.58)
-            : scheme.surfaceContainer,
+        backgroundColor: scheme.surfaceContainer,
         surfaceTintColor: Colors.transparent,
         indicatorColor: scheme.secondaryContainer,
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
@@ -190,9 +178,7 @@ class AppTheme {
       ),
       navigationRailTheme: NavigationRailThemeData(
         elevation: 0,
-        backgroundColor: glass
-            ? Colors.transparent
-            : scheme.surfaceContainerLow,
+        backgroundColor: scheme.surfaceContainerLow,
         useIndicator: true,
         indicatorColor: scheme.secondaryContainer,
         selectedIconTheme: IconThemeData(color: scheme.onSecondaryContainer),
@@ -205,9 +191,7 @@ class AppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: glass
-            ? scheme.surfaceContainerHigh.withValues(alpha: 0.7)
-            : scheme.surfaceContainerHigh,
+        fillColor: scheme.surfaceContainerHigh,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 20,
           vertical: 18,
@@ -337,12 +321,6 @@ class AppTheme {
         ),
       ),
       extensions: <ThemeExtension<dynamic>>[AppSurfaceTheme(appearance)],
-    ).copyWith(
-      scaffoldBackgroundColor: glass
-          ? Colors.transparent
-          : amoled
-          ? Colors.black
-          : scheme.surface,
-    );
+    ).copyWith(scaffoldBackgroundColor: amoled ? Colors.black : scheme.surface);
   }
 }

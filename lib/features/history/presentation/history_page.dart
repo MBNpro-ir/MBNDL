@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/utils/floating_navigation_insets.dart';
 import '../../../services/logger/app_logger.dart';
 import '../../../services/storage/download_path_service.dart';
 import '../../../shared/models/download_item.dart';
@@ -323,7 +324,11 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                   ),
                 ),
               ],
-            const SliverToBoxAdapter(child: SizedBox(height: 40)),
+            SliverToBoxAdapter(
+              child: SizedBox(
+                height: 40 + floatingNavigationScrollClearance(context),
+              ),
+            ),
           ],
         ),
       ),

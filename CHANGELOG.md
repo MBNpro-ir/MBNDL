@@ -2,6 +2,32 @@
 
 All notable user-facing and developer-facing changes are documented in this file.
 
+## 🫧 1.0.6 — 2026-08-15
+
+### 🎨 Liquid Glass navigation
+
+- 🔮 Replaced the simulated global translucency with a GPU shader renderer that provides live refraction and a morphing lens on Android Impeller, plus a stable single-lens Skia fallback on Windows.
+- 🧭 Limited Liquid Glass strictly to the bottom navigation controls; Home, Settings, dialogs, cards, inputs, and wide-screen navigation rails remain clear Material surfaces.
+- 📐 Kept page content scrolling visibly behind the floating controls so refraction has a real backdrop, added a short transparent fade, and placed clearance only at the end of each scrollable so its final row still stops fully above the bar.
+- 🌫️ Made the non-glass Material bar compact, translucent, and backdrop-aware as well, without applying the Liquid Glass shader or hiding content beneath it.
+- 🪄 Added a smooth scroll-direction animation: the bottom capsule becomes compact while moving down a page and expands again when moving up.
+- 💎 Added continuous Apple-style capsule geometry, optical rim lighting, content-aware tint, chromatic dispersion, magnification, and an animated refracting selection pill.
+- ♿ Rebuilt Motion as clear System, Full, and Reduced choices; Full and Reduced now explicitly override the platform preference, while reduced mode removes route, theme, selection-pill, and floating-navigation animation immediately.
+
+### 🎞️ Format selection and merging
+
+- 🧩 Rebuilt format selection around simple resolution groups such as `720p`, with compact codec/container variants inside each group and bitrate groups for audio.
+- 📱 Reduced header, cards, options, and action sizes so the complete workflow remains understandable and usable on narrow phones.
+- ✅ Preserved multi-selection, downloaded-before highlighting, copy confirmation, covers, and subtitles in the new layout.
+- 🧠 Made Smart Merge explicitly require one video plus one audio stream and report one final output.
+- 🛠️ Replaced the legacy two-process “separate” path with one yt-dlp `video+audio` invocation; FFmpeg now produces one final file and yt-dlp is instructed to remove intermediate streams and fragments on Android and Windows.
+
+### 🚀 Delivery
+
+- 🏷️ Set the application version to `1.0.6+6`.
+- ⚡ Changed the release workflow to run only once per `v*` tag, removed the `main` trigger and manual duplicate path, and removed the slow `flutter doctor -v` cache check.
+- ♻️ Kept Flutter/pub cache restore, target-artifact validation, automatic broken-cache deletion, rebuild, and save behavior.
+
 ## ✨ 1.0.5 — 2026-08-15
 
 ### 🎵 Sources and networking

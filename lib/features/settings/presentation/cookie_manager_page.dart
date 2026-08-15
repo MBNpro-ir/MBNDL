@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../../core/utils/floating_navigation_insets.dart';
 import '../../../services/storage/cookie_storage_service.dart';
 import '../../../shared/models/cookie_item.dart';
 import '../../../shared/providers/cookie_provider.dart';
@@ -133,7 +134,12 @@ class _CookieManagerPageState extends ConsumerState<CookieManagerPage> {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 900),
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
+            padding: EdgeInsets.fromLTRB(
+              16,
+              12,
+              16,
+              18 + floatingNavigationScrollClearance(context),
+            ),
             children: [
               Card(
                 color: colors.errorContainer,

@@ -11,7 +11,6 @@ import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/app_theme_mode.dart';
 import 'core/theme/app_appearance.dart';
-import 'core/theme/glass_surface.dart';
 import 'features/permissions/permission_request_page.dart';
 import 'features/settings/presentation/cookie_manager_page.dart';
 import 'services/database/database_service.dart';
@@ -529,6 +528,16 @@ class _MBNDownloaderAppState extends ConsumerState<MBNDownloaderApp>
     return DynamicColorBuilder(
       builder: (lightDynamic, darkDynamic) {
         final useDynamic = color == AppThemeColor.materialYou;
+        final systemDisablesAnimations = WidgetsBinding
+            .instance
+            .platformDispatcher
+            .accessibilityFeatures
+            .disableAnimations;
+        final disableAnimations = switch (appearance.motionMode) {
+          AppMotionMode.system => systemDisablesAnimations,
+          AppMotionMode.full => false,
+          AppMotionMode.reduced => true,
+        };
         final lightTheme = useDynamic && lightDynamic != null
             ? AppTheme.fromColorScheme(lightDynamic, appearance: appearance)
             : AppTheme.lightTheme(color, appearance);
@@ -544,7 +553,7 @@ class _MBNDownloaderAppState extends ConsumerState<MBNDownloaderApp>
           theme: lightTheme,
           darkTheme: darkTheme,
           themeMode: mode.toThemeMode(),
-          themeAnimationDuration: appearance.motionMode == AppMotionMode.reduced
+          themeAnimationDuration: disableAnimations
               ? Duration.zero
               : const Duration(milliseconds: 420),
           themeAnimationCurve: Curves.easeOutCubic,
@@ -559,13 +568,17 @@ class _MBNDownloaderAppState extends ConsumerState<MBNDownloaderApp>
               ),
               _StartupPhase.ready => routerChild ?? const SizedBox.shrink(),
             };
-            if (appearance.motionMode == AppMotionMode.reduced) {
-              content = MediaQuery(
-                data: MediaQuery.of(context).copyWith(disableAnimations: true),
-                child: content,
-              );
-            }
-            return AppBackdrop(child: content);
+            final media = MediaQuery.of(context);
+            return MediaQuery(
+              data: media.copyWith(
+                disableAnimations: switch (appearance.motionMode) {
+                  AppMotionMode.system => media.disableAnimations,
+                  AppMotionMode.full => false,
+                  AppMotionMode.reduced => true,
+                },
+              ),
+              child: content,
+            );
           },
         );
       },
