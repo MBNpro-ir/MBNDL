@@ -2,9 +2,12 @@
 
 All notable user-facing and developer-facing changes are documented in this file.
 
-## 🧰 Unreleased
+## 🩹 1.0.8 — 2026-08-15
+
+### 📱 Android format inspection
 
 - 🩹 Fixed Android format inspection crashing when the yt-dlp bridge serializes numeric metadata such as `quality`, FPS, bitrate, sample rate, dimensions, or preference values as strings. Numeric strings are parsed safely, while labels and non-finite sentinel values are ignored.
+- 🏷️ Set the application version to `1.0.8+8`.
 
 ## 🔔 1.0.7 — 2026-08-15
 
