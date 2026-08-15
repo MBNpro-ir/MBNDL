@@ -54,4 +54,53 @@ void main() {
     expect(format.filesizeDisplay, '~10.0 MB');
     expect(format.protocol, 'https');
   });
+
+  test('accepts Android yt-dlp numeric fields encoded as strings', () {
+    final format = VideoFormat.fromJson({
+      'format_id': 'android-bridge',
+      'width': '1920',
+      'height': '1080',
+      'fps': '30',
+      'filesize': '1048576',
+      'filesize_approx': '2,097,152',
+      'tbr': '2450.5',
+      'vbr': '2300',
+      'abr': '150.5',
+      'language_preference': '-1',
+      'audio_channels': '2',
+      'asr': '48000',
+      'quality': 'hd1080',
+      'source_preference': 'null',
+      'vcodec': 'avc1.640028',
+      'acodec': 'mp4a.40.2',
+    });
+
+    expect(format.width, 1920);
+    expect(format.height, 1080);
+    expect(format.fps, 30);
+    expect(format.filesize, 1048576);
+    expect(format.tbr, 2450.5);
+    expect(format.vbr, 2300);
+    expect(format.abr, 150.5);
+    expect(format.languagePreference, -1);
+    expect(format.audioChannels, 2);
+    expect(format.audioSampleRate, 48000);
+    expect(format.quality, isNull);
+    expect(format.sourcePreference, isNull);
+  });
+
+  test('ignores non-finite and sentinel numeric metadata', () {
+    final format = VideoFormat.fromJson({
+      'format_id': 'sentinels',
+      'fps': 'NaN',
+      'tbr': 'Infinity',
+      'abr': 'N/A',
+      'height': 'unknown',
+    });
+
+    expect(format.fps, isNull);
+    expect(format.tbr, isNull);
+    expect(format.abr, isNull);
+    expect(format.height, isNull);
+  });
 }

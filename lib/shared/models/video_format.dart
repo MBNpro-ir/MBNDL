@@ -64,8 +64,32 @@ class VideoFormat {
       return value;
     }
 
+    double? optionalNumber(String key) {
+      final raw = json[key];
+      final double? value;
+      if (raw is num) {
+        value = raw.toDouble();
+      } else if (raw is String) {
+        final text = raw.trim().replaceAll(',', '');
+        if (text.isEmpty ||
+            const {
+              'null',
+              'none',
+              'unknown',
+              'n/a',
+              'na',
+            }.contains(text.toLowerCase())) {
+          return null;
+        }
+        value = double.tryParse(text);
+      } else {
+        return null;
+      }
+      return value?.isFinite == true ? value : null;
+    }
+
     int? positiveInt(String key) {
-      final value = json[key] as num?;
+      final value = optionalNumber(key);
       return value != null && value > 0 ? value.toInt() : null;
     }
 
@@ -96,25 +120,25 @@ class VideoFormat {
       ext: ext,
       width: positiveInt('width'),
       height: positiveInt('height'),
-      fps: (json['fps'] as num?)?.toDouble(),
+      fps: optionalNumber('fps'),
       vcodec: vcodec,
       acodec: acodec,
       filesize: positiveInt('filesize'),
       filesizeApprox: positiveInt('filesize_approx'),
-      tbr: (json['tbr'] as num?)?.toDouble(),
-      vbr: (json['vbr'] as num?)?.toDouble(),
-      abr: (json['abr'] as num?)?.toDouble(),
+      tbr: optionalNumber('tbr'),
+      vbr: optionalNumber('vbr'),
+      abr: optionalNumber('abr'),
       formatNote: optionalText('format_note'),
       format: optionalText('format'),
       container: optionalText('container'),
       protocol: optionalText('protocol'),
       dynamicRange: optionalText('dynamic_range'),
       language: optionalText('language'),
-      languagePreference: (json['language_preference'] as num?)?.toDouble(),
+      languagePreference: optionalNumber('language_preference'),
       audioChannels: positiveInt('audio_channels'),
-      audioSampleRate: (json['asr'] as num?)?.toDouble(),
-      quality: (json['quality'] as num?)?.toDouble(),
-      sourcePreference: (json['source_preference'] as num?)?.toDouble(),
+      audioSampleRate: optionalNumber('asr'),
+      quality: optionalNumber('quality'),
+      sourcePreference: optionalNumber('source_preference'),
       hasVideo:
           isPresent(vcodec) || isPresent(videoExt) || directVideoContainer,
       hasAudio:

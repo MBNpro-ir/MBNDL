@@ -2,6 +2,10 @@
 
 All notable user-facing and developer-facing changes are documented in this file.
 
+## 🧰 Unreleased
+
+- 🩹 Fixed Android format inspection crashing when the yt-dlp bridge serializes numeric metadata such as `quality`, FPS, bitrate, sample rate, dimensions, or preference values as strings. Numeric strings are parsed safely, while labels and non-finite sentinel values are ignored.
+
 ## 🔔 1.0.7 — 2026-08-15
 
 ### 🧭 Overlays and safe navigation
