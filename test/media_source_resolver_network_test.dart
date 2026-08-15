@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mbn_downloader/services/downloader/download_service.dart';
 import 'package:mbn_downloader/services/downloader/media_source_resolver.dart';
 import 'package:mbn_downloader/shared/models/media_source.dart';
 
@@ -21,6 +22,42 @@ void main() {
       expect(result.notice, contains('YouTube'));
     },
     skip: enabled ? false : 'Set MBNDL_NETWORK_TEST=1 for live verification',
+  );
+
+  test(
+    'keeps a title-only fallback for Spotify tracks with unmatched artists',
+    () async {
+      final result = await MediaSourceResolver.instance.resolve(
+        'https://open.spotify.com/track/4BOsgeRX1R5DUYnnofLv7b',
+      );
+
+      expect(result.provider, MediaProvider.spotify);
+      expect(result.title, 'Tell The Devil I’m Busy');
+      expect(result.candidateUrls, hasLength(2));
+      expect(result.candidateUrls.first, contains('Manllii, Broken Vale'));
+      expect(result.candidateUrls.last, 'ytsearch1:Tell The Devil I’m Busy');
+    },
+    skip: enabled ? false : 'Set MBNDL_NETWORK_TEST=1 for live verification',
+  );
+
+  test(
+    'uses the Spotify fallback to expose downloadable audio formats',
+    () async {
+      await DownloadService.instance.initialize();
+      const url =
+          'https://open.spotify.com/track/4BOsgeRX1R5DUYnnofLv7b'
+          '?si=08220539856c4bb3';
+
+      final info = await DownloadService.instance.extractVideoInfo(url);
+      final formats = await DownloadService.instance.getAvailableFormats(url);
+
+      expect(info['title'], 'Tell The Devil I’m Busy');
+      expect(formats, isNotEmpty);
+      expect(formats.any((format) => format.hasAudio), isTrue);
+    },
+    skip: enabled && Platform.isWindows
+        ? false
+        : 'Set MBNDL_NETWORK_TEST=1 and run on Windows for live verification',
   );
 
   test(

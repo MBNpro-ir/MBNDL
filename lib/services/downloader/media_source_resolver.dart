@@ -111,10 +111,12 @@ class MediaSourceResolver {
         final artist = track['subtitle']?.toString().trim() ?? '';
         final sourceUrl = _spotifyWebUrl(track['uri']?.toString());
         if (title.isEmpty || sourceUrl == null) continue;
+        final searchUrls = _searchUrls(title, artist);
         tracks.add(
           ResolvedMediaTrack(
             sourceUrl: sourceUrl,
-            effectiveUrl: _searchUrl(title, artist),
+            effectiveUrl: searchUrls.first,
+            fallbackUrls: searchUrls.skip(1).toList(growable: false),
             title: title,
             artist: artist.isEmpty ? null : artist,
             thumbnail: collectionImage,
@@ -138,10 +140,12 @@ class MediaSourceResolver {
       if (title.isEmpty) {
         throw const FormatException('Spotify item has no readable title');
       }
+      final searchUrls = _searchUrls(title, artist);
       tracks.add(
         ResolvedMediaTrack(
           sourceUrl: 'https://open.spotify.com/$type/$id',
-          effectiveUrl: _searchUrl(title, artist),
+          effectiveUrl: searchUrls.first,
+          fallbackUrls: searchUrls.skip(1).toList(growable: false),
           title: title,
           artist: artist.isEmpty ? null : artist,
           thumbnail: collectionImage,
@@ -157,6 +161,7 @@ class MediaSourceResolver {
     final result = ResolvedMediaSource(
       originalUrl: originalUrl,
       effectiveUrl: first.effectiveUrl,
+      fallbackUrls: first.fallbackUrls,
       provider: MediaProvider.spotify,
       title: tracks.length > 1
           ? entity['title']?.toString() ?? entity['name']?.toString()
@@ -170,6 +175,7 @@ class MediaSourceResolver {
       _cache[track.sourceUrl] = ResolvedMediaSource(
         originalUrl: track.sourceUrl,
         effectiveUrl: track.effectiveUrl,
+        fallbackUrls: track.fallbackUrls,
         provider: MediaProvider.spotify,
         title: track.title,
         thumbnail: track.thumbnail,
@@ -192,13 +198,20 @@ class MediaSourceResolver {
         'AppleWebKit/537.36 Chrome/124 Safari/537.36',
   };
 
-  String _searchUrl(String title, String artist) {
-    final query = [artist, title, 'official audio']
+  List<String> _searchUrls(String title, String artist) {
+    final preciseQuery = [artist, title, 'official audio']
         .where((value) => value.trim().isNotEmpty)
         .join(' - ')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
-    return 'ytsearch1:$query';
+    final titleQuery = title.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return {
+      'ytsearch1:$preciseQuery',
+      // Some distributors publish the same recording under a different
+      // YouTube channel name. A title-only retry keeps those tracks usable
+      // without weakening the preferred artist-aware match for normal songs.
+      'ytsearch1:$titleQuery',
+    }.toList(growable: false);
   }
 
   String? _spotifyWebUrl(String? uri) {

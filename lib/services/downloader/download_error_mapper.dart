@@ -41,6 +41,13 @@ class DownloadErrorMapper {
   static FriendlyDownloadError fromText(String raw) {
     final text = raw.toLowerCase();
 
+    if (text.contains('spotify match unavailable')) {
+      return const FriendlyDownloadError(
+        title: 'No matching audio source was found',
+        message: 'Spotify metadata loaded, but no playable match was found.',
+        suggestion: 'Try another track or paste a direct YouTube link.',
+      );
+    }
     if (_containsAny(text, const [
       'ffmpeg not found',
       'ffprobe not found',

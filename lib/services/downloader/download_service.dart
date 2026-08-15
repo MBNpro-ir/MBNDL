@@ -33,6 +33,7 @@ class DownloadService {
   List<String>? _detectedRuntimeArgs;
   String? _cachedExtractionKey;
   Map<String, dynamic>? _cachedExtraction;
+  final Map<String, _ResolvedSourceProbe> _sourceProbes = {};
   final Map<int, Process> _activeDownloads = {};
   final Set<int> _cancelledDownloads = {};
 
@@ -191,12 +192,15 @@ class DownloadService {
     YtDlpSettings? settings,
   }) async {
     final source = await resolveMediaSource(url);
-    final effectiveUrl = source.effectiveUrl;
 
     // Use the native Android implementation.
     if (Platform.isAndroid) {
+      if (source.provider == MediaProvider.spotify) {
+        final probe = await _probeSpotifySource(source, settings);
+        return _decorateSourceInfo(probe.androidInfo!, source);
+      }
       final info = await AndroidYtDlpService.instance.extractVideoInfo(
-        effectiveUrl,
+        source.effectiveUrl,
         settings: settings,
       );
       return _decorateSourceInfo(info, source);
@@ -212,7 +216,12 @@ class DownloadService {
     );
 
     try {
-      final jsonData = await _extractDesktopData(effectiveUrl, settings);
+      final probe = source.provider == MediaProvider.spotify
+          ? await _probeSpotifySource(source, settings)
+          : null;
+      final jsonData =
+          probe?.desktopData ??
+          await _extractDesktopData(source.effectiveUrl, settings);
       final representative = _representativeEntry(jsonData);
       final isPlaylist = jsonData['_type'] == 'playlist';
       AppLogger.info('Video info extracted: ${jsonData['title']}');
@@ -242,12 +251,18 @@ class DownloadService {
     YtDlpSettings? settings,
   }) async {
     final source = await resolveMediaSource(url);
-    final effectiveUrl = source.effectiveUrl;
+
+    if (source.provider == MediaProvider.spotify) {
+      AppLogger.info('Fetching Spotify formats');
+      final probe = await _probeSpotifySource(source, settings);
+      AppLogger.info('Found ${probe.formats.length} Spotify formats');
+      return List<VideoFormat>.of(probe.formats);
+    }
 
     // Use the native Android implementation.
     if (Platform.isAndroid) {
       return AndroidYtDlpService.instance.getAvailableFormats(
-        effectiveUrl,
+        source.effectiveUrl,
         settings: settings,
       );
     }
@@ -260,20 +275,15 @@ class DownloadService {
     AppLogger.info('Fetching ${source.provider.displayName} formats');
 
     try {
-      final jsonData = await _extractDesktopData(effectiveUrl, settings);
-      final formatsJson =
-          _representativeEntry(jsonData)['formats'] as List<dynamic>?;
+      final jsonData = await _extractDesktopData(source.effectiveUrl, settings);
+      final formats = _formatsFromData(jsonData);
 
-      if (formatsJson == null || formatsJson.isEmpty) {
+      if (formats.isEmpty) {
         AppLogger.warning(
           'No formats found for ${source.provider.displayName}',
         );
         return [];
       }
-
-      final formats = formatsJson
-          .map((f) => VideoFormat.fromJson(f as Map<String, dynamic>))
-          .toList();
 
       AppLogger.info('Found ${formats.length} formats');
       return formats;
@@ -281,6 +291,120 @@ class DownloadService {
       AppLogger.error('Error fetching formats', e, stackTrace);
       rethrow;
     }
+  }
+
+  Future<_ResolvedSourceProbe> _probeSpotifySource(
+    ResolvedMediaSource source,
+    YtDlpSettings? settings,
+  ) async {
+    final cached = _sourceProbes[source.originalUrl];
+    if (cached != null) return cached;
+
+    Object? lastError;
+    StackTrace? lastStackTrace;
+    final candidates = source.candidateUrls;
+    for (var index = 0; index < candidates.length; index++) {
+      final candidate = candidates[index];
+      try {
+        late final _ResolvedSourceProbe probe;
+        if (Platform.isAndroid) {
+          final info = await AndroidYtDlpService.instance.extractVideoInfo(
+            candidate,
+            settings: settings,
+          );
+          final formats = await AndroidYtDlpService.instance
+              .getAvailableFormats(candidate, settings: settings);
+          if (formats.isEmpty) {
+            AppLogger.warning(
+              'Spotify match ${index + 1}/${candidates.length} returned no '
+              'formats',
+            );
+            continue;
+          }
+          probe = _ResolvedSourceProbe(
+            effectiveUrl: _youtubePlaybackUrl(
+              id: info['id'],
+              fallback: candidate,
+            ),
+            formats: formats,
+            androidInfo: info,
+          );
+        } else {
+          if (_ytDlpPath == null) {
+            throw StateError('yt-dlp is not available');
+          }
+          final data = await _extractDesktopData(candidate, settings);
+          final formats = _formatsFromData(data);
+          if (formats.isEmpty) {
+            AppLogger.warning(
+              'Spotify match ${index + 1}/${candidates.length} returned no '
+              'formats',
+            );
+            continue;
+          }
+          final representative = _representativeEntry(data);
+          probe = _ResolvedSourceProbe(
+            effectiveUrl: _youtubePlaybackUrl(
+              id: representative['id'],
+              webpageUrl: representative['webpage_url'],
+              fallback: candidate,
+            ),
+            formats: formats,
+            desktopData: data,
+          );
+        }
+
+        _sourceProbes[source.originalUrl] = probe;
+        AppLogger.info(
+          index == 0
+              ? 'Matched Spotify metadata using the precise search'
+              : 'Matched Spotify metadata using title fallback '
+                    '${index + 1}/${candidates.length}',
+        );
+        return probe;
+      } catch (error, stackTrace) {
+        lastError = error;
+        lastStackTrace = stackTrace;
+        AppLogger.warning(
+          'Spotify match ${index + 1}/${candidates.length} failed: $error',
+        );
+      }
+    }
+
+    if (lastError != null && lastStackTrace != null) {
+      AppLogger.error(
+        'Spotify matching exhausted every search candidate',
+        lastError,
+        lastStackTrace,
+      );
+    }
+    throw StateError(
+      'Spotify match unavailable: metadata loaded, but no playable YouTube '
+      'audio source was found.',
+    );
+  }
+
+  List<VideoFormat> _formatsFromData(Map<String, dynamic> data) {
+    final rawFormats = _representativeEntry(data)['formats'];
+    if (rawFormats is! List) return const [];
+    return rawFormats
+        .whereType<Map>()
+        .map(
+          (format) => VideoFormat.fromJson(Map<String, dynamic>.from(format)),
+        )
+        .toList(growable: false);
+  }
+
+  String _youtubePlaybackUrl({
+    required Object? id,
+    required String fallback,
+    Object? webpageUrl,
+  }) {
+    final page = webpageUrl?.toString().trim() ?? '';
+    if (page.startsWith('https://') || page.startsWith('http://')) return page;
+    final videoId = id?.toString().trim() ?? '';
+    if (videoId.isEmpty) return fallback;
+    return 'https://www.youtube.com/watch?v=$videoId';
   }
 
   Map<String, dynamic> _decorateSourceInfo(
@@ -299,8 +423,10 @@ class DownloadService {
       if (source.notice != null) 'sourceNotice': source.notice,
       if (source.isCollection)
         'catalogTracks': source.tracks.map((track) => track.toJson()).toList(),
-      if (source.isCollection) 'isPlaylist': true,
-      if (source.isCollection) 'playlistCount': source.tracks.length,
+      if (source.provider == MediaProvider.spotify)
+        'isPlaylist': source.isCollection,
+      if (source.provider == MediaProvider.spotify)
+        'playlistCount': source.tracks.length,
     };
   }
 
@@ -425,7 +551,9 @@ class DownloadService {
     required Function(DownloadItem) onUpdate,
   }) async {
     final source = await resolveMediaSource(item.url);
-    final downloadUrl = source.effectiveUrl;
+    final downloadUrl = source.provider == MediaProvider.spotify
+        ? (await _probeSpotifySource(source, settings)).effectiveUrl
+        : source.effectiveUrl;
 
     // Use the native Android implementation.
     if (Platform.isAndroid) {
@@ -930,4 +1058,18 @@ class _DownloadedArtifacts {
   final String? coverPath;
   final List<String> subtitlePaths;
   final List<String> relatedPaths;
+}
+
+class _ResolvedSourceProbe {
+  const _ResolvedSourceProbe({
+    required this.effectiveUrl,
+    required this.formats,
+    this.androidInfo,
+    this.desktopData,
+  });
+
+  final String effectiveUrl;
+  final List<VideoFormat> formats;
+  final Map<String, dynamic>? androidInfo;
+  final Map<String, dynamic>? desktopData;
 }

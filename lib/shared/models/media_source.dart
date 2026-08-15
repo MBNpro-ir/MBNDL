@@ -21,6 +21,7 @@ class ResolvedMediaTrack {
     required this.sourceUrl,
     required this.effectiveUrl,
     required this.title,
+    this.fallbackUrls = const [],
     this.artist,
     this.thumbnail,
     this.durationSeconds,
@@ -28,6 +29,7 @@ class ResolvedMediaTrack {
 
   final String sourceUrl;
   final String effectiveUrl;
+  final List<String> fallbackUrls;
   final String title;
   final String? artist;
   final String? thumbnail;
@@ -41,6 +43,11 @@ class ResolvedMediaTrack {
     if (thumbnail?.isNotEmpty == true) 'thumbnail': thumbnail,
     if (durationSeconds != null) 'duration': durationSeconds,
   };
+
+  List<String> get candidateUrls => List.unmodifiable({
+    effectiveUrl,
+    ...fallbackUrls.where((url) => url.isNotEmpty),
+  });
 }
 
 class ResolvedMediaSource {
@@ -48,6 +55,7 @@ class ResolvedMediaSource {
     required this.originalUrl,
     required this.effectiveUrl,
     required this.provider,
+    this.fallbackUrls = const [],
     this.title,
     this.thumbnail,
     this.notice,
@@ -56,6 +64,7 @@ class ResolvedMediaSource {
 
   final String originalUrl;
   final String effectiveUrl;
+  final List<String> fallbackUrls;
   final MediaProvider provider;
   final String? title;
   final String? thumbnail;
@@ -63,4 +72,9 @@ class ResolvedMediaSource {
   final List<ResolvedMediaTrack> tracks;
 
   bool get isCollection => tracks.length > 1;
+
+  List<String> get candidateUrls => List.unmodifiable({
+    effectiveUrl,
+    ...fallbackUrls.where((url) => url.isNotEmpty),
+  });
 }

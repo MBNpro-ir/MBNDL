@@ -25,6 +25,16 @@ void main() {
       );
     });
 
+    test('explains an exhausted Spotify match without engine jargon', () {
+      final error = DownloadErrorMapper.fromText(
+        'Spotify match unavailable: no playable source',
+      );
+
+      expect(error.title, 'No matching audio source was found');
+      expect(error.message, contains('Spotify metadata loaded'));
+      expect(error.suggestion, contains('direct YouTube link'));
+    });
+
     test('does not expose an opaque fallback error', () {
       final error = DownloadErrorMapper.fromText('exit code 123');
 
