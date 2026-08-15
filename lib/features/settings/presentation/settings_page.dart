@@ -1,4 +1,4 @@
-// ignore_for_file: deprecated_member_use
+// ignore_for_file: deprecated_member_use, unused_element
 
 import 'dart:io';
 import 'dart:convert';
@@ -17,6 +17,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_theme_mode.dart';
 import '../../../shared/providers/settings_provider.dart';
 import '../../../shared/providers/cookie_provider.dart';
+import '../../../shared/providers/app_update_provider.dart';
 import '../../../shared/models/delete_preference.dart';
 import '../../../shared/models/windows_close_behavior.dart';
 import '../../../services/logger/app_logger.dart';
@@ -35,6 +36,7 @@ import '../../../services/storage/cookie_storage_service.dart';
 import '../../../services/permissions/permission_service.dart';
 import 'logs_viewer_page.dart';
 import 'cookie_manager_page.dart';
+import 'appearance_settings_page.dart';
 
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
@@ -46,6 +48,7 @@ class SettingsPage extends ConsumerWidget {
     final logLevel = ref.watch(logLevelProvider);
     final deletePreference = ref.watch(deletePreferenceProvider);
     final closeBehavior = ref.watch(windowsCloseBehaviorProvider);
+    final appearance = ref.watch(appearanceSettingsProvider);
     final youtubeAccount = ref.watch(cookieProvider).selectedCookie;
     final colors = Theme.of(context).colorScheme;
 
@@ -106,19 +109,15 @@ class SettingsPage extends ConsumerWidget {
       icon: Icons.auto_awesome_outlined,
       children: [
         ListTile(
-          leading: Icon(themeMode.icon),
-          title: const Text('Theme mode'),
-          subtitle: Text(themeMode.displayName),
-          onTap: () => _showThemeDialog(context, ref, themeMode),
-        ),
-        ListTile(
-          leading: Icon(
-            Icons.palette_outlined,
-            color: _getThemeColorPreview(themeColor),
+          leading: const Icon(Icons.palette_outlined),
+          title: const Text('Appearance'),
+          subtitle: Text(
+            '${themeMode.displayName} · ${AppTheme.getThemeColorName(themeColor)} · '
+            '${appearance.surfaceStyle.displayName}',
           ),
-          title: const Text('Theme color'),
-          subtitle: Text(AppTheme.getThemeColorName(themeColor)),
-          onTap: () => _showThemeColorDialog(context, ref, themeColor),
+          trailing: const Icon(Icons.chevron_right_rounded),
+          onTap: () =>
+              _navigateToSubPage(context, const AppearanceSettingsPage()),
         ),
         if (Platform.isWindows)
           ListTile(
@@ -215,7 +214,7 @@ class SettingsPage extends ConsumerWidget {
           leading: const Icon(Icons.upload_outlined),
           title: const Text('Import settings'),
           subtitle: const Text('Restore app settings from a file'),
-          onTap: () => _importSettings(context),
+          onTap: () => _importSettings(context, ref),
         ),
         ListTile(
           leading: const Icon(Icons.description_outlined),
@@ -794,15 +793,6 @@ class SettingsPage extends ConsumerWidget {
 
   Future<void> _exportSettings(BuildContext context) async {
     try {
-      // Check permission on Android
-      if (Platform.isAndroid) {
-        final hasPermission = await PermissionService.instance
-            .checkAndRequestPermission(context);
-        if (!hasPermission) {
-          return;
-        }
-      }
-
       final path = await SettingsExportService.instance.exportSettings();
       if (context.mounted && path != null) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -820,15 +810,6 @@ class SettingsPage extends ConsumerWidget {
 
   Future<void> _exportLogs(BuildContext context) async {
     try {
-      // Check permission on Android
-      if (Platform.isAndroid) {
-        final hasPermission = await PermissionService.instance
-            .checkAndRequestPermission(context);
-        if (!hasPermission) {
-          return;
-        }
-      }
-
       final path = await SettingsExportService.instance.exportLogs();
       if (context.mounted && path != null) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -844,23 +825,25 @@ class SettingsPage extends ConsumerWidget {
     }
   }
 
-  Future<void> _importSettings(BuildContext context) async {
+  Future<void> _importSettings(BuildContext context, WidgetRef ref) async {
     try {
-      // Check permission on Android
-      if (Platform.isAndroid) {
-        final hasPermission = await PermissionService.instance
-            .checkAndRequestPermission(context);
-        if (!hasPermission) {
-          return;
-        }
-      }
-
-      final success = await SettingsExportService.instance.importSettings();
+      final result = await SettingsExportService.instance.importSettings();
       if (context.mounted) {
-        if (success) {
+        if (result != null) {
+          ref.invalidate(themeModeProvider);
+          ref.invalidate(themeColorProvider);
+          ref.invalidate(appearanceSettingsProvider);
+          ref.invalidate(logLevelProvider);
+          ref.invalidate(ytDlpSettingsProvider);
+          ref.invalidate(deletePreferenceProvider);
+          ref.invalidate(windowsCloseBehaviorProvider);
+          ref.invalidate(appUpdateProvider);
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Settings imported! Please restart app.'),
+            SnackBar(
+              content: Text(
+                'Settings applied · ${result.preferenceCount} preferences · '
+                '${result.presetCount} presets',
+              ),
             ),
           );
         }

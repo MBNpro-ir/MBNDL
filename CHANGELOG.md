@@ -2,6 +2,39 @@
 
 All notable user-facing and developer-facing changes are documented in this file.
 
+## ✨ 1.0.5 — 2026-08-15
+
+### 🎵 Sources and networking
+
+- 🎧 Added transparent Spotify smart matching for tracks, albums, playlists, artist Top tracks, episodes, and shows: public metadata is expanded into individual jobs and matched against YouTube/YouTube Music with a visible source warning.
+- 🌍 Added explicit direct-source support and classification for YouTube Music, SoundCloud, Bandcamp, Audiomack, Audius, Mixcloud, Apple Podcasts, Internet Archive, and other yt-dlp extractors.
+- 🪟 Added live Windows WinINet/System Proxy discovery before every inspection and download, including protocol mappings, SOCKS, bypass rules, direct fallback, and manual-proxy precedence.
+
+### 🧾 Logging and portability
+
+- 🧠 Replaced fragmented text logs with newline-delimited structured events so multiline errors and stack traces remain attached to the correct severity.
+- 🎚️ Corrected log thresholds and all six viewer filters; yt-dlp/FFmpeg `ERROR:` output is no longer mislabeled as a warning.
+- 🔒 Added automatic log redaction for cookie paths, authentication headers, and credentialed proxy URLs.
+- 💾 Upgraded settings backups to schema 2 with current yt-dlp settings, custom presets, appearance, close behavior, diagnostics, and updater choices; imports are validated before writing and apply immediately.
+- 🛡️ Excluded account cookies, proxy credentials, history, permissions, device-specific paths, and custom command arguments from portable backups.
+
+### 🎨 Appearance and motion
+
+- 🫧 Added optional **Liquid Glass (Beta)** surfaces using Flutter-native live backdrop blur, adaptive/efficient/balanced/vivid quality, opacity, vibrancy, theme-derived tint, lens-edge refraction, chromatic edging, and depth.
+- 🩵 Refreshed the default fallback palette to aqua Material 3 Expressive and added floating rounded navigation, translucent large-screen rails, expressive page transitions, and a complete reduced-motion mode.
+- 📱 Added a responsive Appearance page and narrow-phone regression coverage; glass controls reflow safely at 360 px while wide layouts retain compact rows.
+
+### 🛠️ Fixed
+
+- 📂 Removed false “folder could not be opened” messages on Android and Windows by treating an accepted system activity/shell launch as success instead of waiting for an unreliable process result.
+- 🎨 Applied the new surface system to the Home download workspace, Settings sections, primary navigation, dialogs, cards, and both compact and wide layouts.
+
+### 🚀 Delivery
+
+- 🏷️ Set the application version to `1.0.5+5`.
+- ✅ Added regression tests for semantic logging, secret redaction, WinINet proxy parsing, source classification, Spotify live resolution, backup coverage, and Liquid Glass narrow layouts.
+- 🤖 Revalidated the Windows x64 and Android ARM32/ARM64 release pipeline before starting the tagged release workflow.
+
 ## 🖥️ 1.0.4 — 2026-08-15
 
 ### ✨ New

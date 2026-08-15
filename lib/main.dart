@@ -10,6 +10,8 @@ import 'package:window_manager/window_manager.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/app_theme_mode.dart';
+import 'core/theme/app_appearance.dart';
+import 'core/theme/glass_surface.dart';
 import 'features/permissions/permission_request_page.dart';
 import 'features/settings/presentation/cookie_manager_page.dart';
 import 'services/database/database_service.dart';
@@ -18,6 +20,7 @@ import 'services/logger/app_logger.dart';
 import 'services/permissions/permission_service.dart';
 import 'services/storage/cookie_storage_service.dart';
 import 'services/storage/settings_storage_service.dart';
+import 'services/storage/presets_storage_service.dart';
 import 'services/storage/storage_service.dart';
 import 'shared/models/windows_close_behavior.dart';
 import 'shared/providers/settings_provider.dart';
@@ -47,6 +50,7 @@ Future<void> main() async {
   await AppLogger.initialize();
   await StorageService.initialize();
   await SettingsStorageService.initialize();
+  await PresetsStorageService.instance.initialize();
   await CookieStorageService.instance.initialize();
   await DatabaseService.initialize();
   await DatabaseService.instance.database;
@@ -504,6 +508,7 @@ class _MBNDownloaderAppState extends ConsumerState<MBNDownloaderApp>
   Widget build(BuildContext context) {
     final mode = ref.watch(themeModeProvider);
     final color = ref.watch(themeColorProvider);
+    final appearance = ref.watch(appearanceSettingsProvider);
     ref.listen<AppUpdateState>(appUpdateProvider, (previous, next) {
       if (_phase == _StartupPhase.ready &&
           next.stage == AppUpdateStage.ready &&
@@ -525,13 +530,13 @@ class _MBNDownloaderAppState extends ConsumerState<MBNDownloaderApp>
       builder: (lightDynamic, darkDynamic) {
         final useDynamic = color == AppThemeColor.materialYou;
         final lightTheme = useDynamic && lightDynamic != null
-            ? AppTheme.fromColorScheme(lightDynamic)
-            : AppTheme.lightTheme(color);
+            ? AppTheme.fromColorScheme(lightDynamic, appearance: appearance)
+            : AppTheme.lightTheme(color, appearance);
         final darkTheme = mode == AppThemeMode.darkAmoled
-            ? AppTheme.darkAmoledTheme(color)
+            ? AppTheme.darkAmoledTheme(color, appearance)
             : useDynamic && darkDynamic != null
-            ? AppTheme.fromColorScheme(darkDynamic)
-            : AppTheme.darkTheme(color);
+            ? AppTheme.fromColorScheme(darkDynamic, appearance: appearance)
+            : AppTheme.darkTheme(color, appearance);
 
         return MaterialApp.router(
           title: 'MBNDL',
@@ -539,17 +544,28 @@ class _MBNDownloaderAppState extends ConsumerState<MBNDownloaderApp>
           theme: lightTheme,
           darkTheme: darkTheme,
           themeMode: mode.toThemeMode(),
-          themeAnimationDuration: const Duration(milliseconds: 350),
+          themeAnimationDuration: appearance.motionMode == AppMotionMode.reduced
+              ? Duration.zero
+              : const Duration(milliseconds: 420),
           themeAnimationCurve: Curves.easeOutCubic,
           routerConfig: appRouter,
-          builder: (context, routerChild) => switch (_phase) {
-            _StartupPhase.checking => const _StartupSurface(),
-            _StartupPhase.permissions => PermissionRequestPage(
-              onPermissionGranted: () {
-                _enterReady();
-              },
-            ),
-            _StartupPhase.ready => routerChild ?? const SizedBox.shrink(),
+          builder: (context, routerChild) {
+            Widget content = switch (_phase) {
+              _StartupPhase.checking => const _StartupSurface(),
+              _StartupPhase.permissions => PermissionRequestPage(
+                onPermissionGranted: () {
+                  _enterReady();
+                },
+              ),
+              _StartupPhase.ready => routerChild ?? const SizedBox.shrink(),
+            };
+            if (appearance.motionMode == AppMotionMode.reduced) {
+              content = MediaQuery(
+                data: MediaQuery.of(context).copyWith(disableAnimations: true),
+                child: content,
+              );
+            }
+            return AppBackdrop(child: content);
           },
         );
       },

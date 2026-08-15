@@ -6,6 +6,7 @@ import '../../shared/models/download_item.dart';
 import '../../shared/models/video_format.dart';
 import '../../features/settings/domain/yt_dlp_settings.dart';
 import '../logger/app_logger.dart';
+import '../logger/log_sanitizer.dart';
 import '../database/database_service.dart';
 import '../storage/cookie_storage_service.dart';
 import 'download_error_mapper.dart';
@@ -185,6 +186,7 @@ class AndroidYtDlpService {
     required DownloadItem item,
     required YtDlpSettings settings,
     required Function(DownloadItem) onUpdate,
+    String? effectiveUrl,
   }) async {
     if (item.id == null) {
       throw Exception('Download item must have an ID');
@@ -269,16 +271,17 @@ class AndroidYtDlpService {
     try {
       // Keep plaintext cookie materialization inside the guarded scope so it
       // is removed even if native download setup fails before execution.
+      final downloadUrl = effectiveUrl ?? item.url;
       cookieFilePath = await CookieStorageService.instance
-          .materializeSelectedCookieForUrl(item.url);
+          .materializeSelectedCookieForUrl(downloadUrl);
       if (cookieFilePath != null) {
         options.addAll(['--cookies', cookieFilePath]);
-        AppLogger.info('Using cookie file: $cookieFilePath');
+        AppLogger.info('Using the selected YouTube account cookies');
       }
 
       AppLogger.info('Starting download for: ${item.title}');
       AppLogger.info('Output path: $outputDir');
-      AppLogger.debug('Options: $options');
+      AppLogger.debug('Options: ${LogSanitizer.commandArgs(options)}');
 
       // Update status to downloading
       var updatedItem = item.copyWith(
@@ -311,7 +314,7 @@ class AndroidYtDlpService {
 
       // Start download via MethodChannel
       final result = await _channel.invokeMethod('startDownload', {
-        'url': item.url,
+        'url': downloadUrl,
         'outputPath': outputDir,
         'options': options,
         'downloadId': item.id.toString(),

@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:intl/intl.dart';
+
+import '../../../services/logger/app_log_entry.dart';
 import '../../../services/logger/app_logger.dart';
 
 class LogsViewerPage extends StatefulWidget {
@@ -11,10 +14,11 @@ class LogsViewerPage extends StatefulWidget {
 }
 
 class _LogsViewerPageState extends State<LogsViewerPage> {
-  String _logContent = '';
-  bool _isLoading = true;
-  String _filter = 'all';
   final TextEditingController _searchController = TextEditingController();
+  final DateFormat _timestampFormat = DateFormat('yyyy-MM-dd HH:mm:ss.SSS');
+  List<AppLogEntry> _entries = const [];
+  bool _isLoading = true;
+  LogLevel? _filter;
   String _searchQuery = '';
 
   @override
@@ -30,95 +34,105 @@ class _LogsViewerPageState extends State<LogsViewerPage> {
   }
 
   Future<void> _loadLogs() async {
-    setState(() {
-      _isLoading = true;
-    });
-
+    if (mounted) setState(() => _isLoading = true);
     try {
-      final content = await AppLogger.getLogContent();
+      final entries = await AppLogger.getLogEntries();
+      if (!mounted) return;
       setState(() {
-        _logContent = content;
+        _entries = entries.reversed.toList(growable: false);
         _isLoading = false;
       });
-    } catch (e) {
+    } catch (error) {
+      if (!mounted) return;
       setState(() {
-        _logContent = 'Failed to load logs: $e';
+        _entries = [
+          AppLogEntry(
+            timestamp: DateTime.now(),
+            level: LogLevel.error,
+            message: 'Failed to load logs',
+            error: error.toString(),
+          ),
+        ];
         _isLoading = false;
       });
     }
   }
 
-  List<String> _getFilteredLines() {
-    if (_logContent.isEmpty) return [];
-
-    var lines = _logContent.split('\n');
-
-    // Apply level filter
-    if (_filter != 'all') {
-      lines = lines.where((line) {
-        final lowerLine = line.toLowerCase();
-        switch (_filter) {
-          case 'error':
-            return lowerLine.contains('[error]');
-          case 'warning':
-            return lowerLine.contains('[warning]');
-          case 'info':
-            return lowerLine.contains('[info]');
-          default:
-            return true;
-        }
-      }).toList();
-    }
-
-    // Apply search filter
-    if (_searchQuery.isNotEmpty) {
-      lines = lines
-          .where(
-            (line) => line.toLowerCase().contains(_searchQuery.toLowerCase()),
-          )
-          .toList();
-    }
-
-    return lines;
+  List<AppLogEntry> get _filteredEntries {
+    final query = _searchQuery.trim().toLowerCase();
+    return _entries
+        .where((entry) {
+          if (_filter != null && entry.level != _filter) return false;
+          if (query.isEmpty) return true;
+          return entry.searchableText.toLowerCase().contains(query) ||
+              entry.level?.name.contains(query) == true;
+        })
+        .toList(growable: false);
   }
 
-  Color _getLineColor(String line) {
-    if (line.toLowerCase().contains('[error]')) {
-      return Colors.red.shade300;
-    } else if (line.toLowerCase().contains('[warning]')) {
-      return Colors.orange.shade300;
-    } else if (line.toLowerCase().contains('[info]')) {
-      return Colors.blue.shade300;
-    }
-    return Colors.grey;
+  Future<void> _copyEntries(List<AppLogEntry> entries) async {
+    final text = entries.reversed.map(_humanReadable).join('\n\n');
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Visible log events copied')));
+  }
+
+  String _humanReadable(AppLogEntry entry) => [
+    '[${_timestampFormat.format(entry.timestamp.toLocal())}] '
+        '[${entry.level?.name.toUpperCase() ?? 'SESSION'}] ${entry.message}',
+    if (entry.error?.isNotEmpty == true) 'Error: ${entry.error}',
+    if (entry.stackTrace?.isNotEmpty == true) entry.stackTrace!,
+  ].join('\n');
+
+  Future<void> _clearLogs() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        icon: const Icon(Icons.delete_sweep_outlined),
+        title: const Text('Clear application logs?'),
+        content: const Text(
+          'This removes the current diagnostic log. New events will continue '
+          'to be recorded at the selected detail level.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Clear'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await AppLogger.clear();
+    await _loadLogs();
   }
 
   @override
   Widget build(BuildContext context) {
-    final filteredLines = _getFilteredLines();
-
+    final filtered = _filteredEntries;
+    final colors = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Application Logs'),
+        title: const Text('Application logs'),
         actions: [
-          // Copy all logs
           IconButton(
-            icon: const Icon(Icons.copy_all),
-            tooltip: 'Copy All',
-            onPressed: () async {
-              await Clipboard.setData(ClipboardData(text: _logContent));
-              if (!context.mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Logs copied to clipboard'),
-                  behavior: SnackBarBehavior.floating,
-                ),
-              );
-            },
+            icon: const Icon(Icons.copy_all_rounded),
+            tooltip: 'Copy visible events',
+            onPressed: filtered.isEmpty ? null : () => _copyEntries(filtered),
           ),
-          // Refresh logs
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Icons.delete_sweep_outlined),
+            tooltip: 'Clear logs',
+            onPressed: _clearLogs,
+          ),
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded),
             tooltip: 'Refresh',
             onPressed: _loadLogs,
           ),
@@ -126,199 +140,92 @@ class _LogsViewerPageState extends State<LogsViewerPage> {
       ),
       body: Column(
         children: [
-          // Filter and Search Section
-          Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.05),
-                      blurRadius: 4,
-                      offset: const Offset(0, 2),
+          Material(
+            color: colors.surfaceContainerLow,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+              child: Column(
+                children: [
+                  TextField(
+                    controller: _searchController,
+                    decoration: InputDecoration(
+                      hintText: 'Search message, error, or stack trace…',
+                      prefixIcon: const Icon(Icons.search_rounded),
+                      suffixIcon: _searchQuery.isEmpty
+                          ? null
+                          : IconButton(
+                              icon: const Icon(Icons.clear_rounded),
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() => _searchQuery = '');
+                              },
+                            ),
                     ),
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    // Search bar
-                    TextField(
-                      controller: _searchController,
-                      decoration: InputDecoration(
-                        hintText: 'Search logs...',
-                        prefixIcon: const Icon(Icons.search),
-                        suffixIcon: _searchQuery.isNotEmpty
-                            ? IconButton(
-                                icon: const Icon(Icons.clear),
-                                onPressed: () {
-                                  setState(() {
-                                    _searchController.clear();
-                                    _searchQuery = '';
-                                  });
-                                },
-                              )
-                            : null,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
-                        ),
-                      ),
-                      onChanged: (value) {
-                        setState(() {
-                          _searchQuery = value;
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    // Filter chips
-                    SingleChildScrollView(
+                    onChanged: (value) => setState(() => _searchQuery = value),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
                       child: Row(
                         children: [
-                          _buildFilterChip('All', 'all'),
-                          const SizedBox(width: 8),
-                          _buildFilterChip('Errors', 'error', Colors.red),
-                          const SizedBox(width: 8),
-                          _buildFilterChip(
-                            'Warnings',
-                            'warning',
-                            Colors.orange,
-                          ),
-                          const SizedBox(width: 8),
-                          _buildFilterChip('Info', 'info', Colors.blue),
+                          _filterChip(label: 'All', level: null),
+                          for (final level in LogLevel.values) ...[
+                            const SizedBox(width: 8),
+                            _filterChip(
+                              label:
+                                  level.name[0].toUpperCase() +
+                                  level.name.substring(1),
+                              level: level,
+                            ),
+                          ],
                         ],
                       ),
                     ),
-                  ],
-                ),
-              )
-              .animate()
-              .fadeIn(duration: 300.ms)
-              .slideY(begin: -0.2, end: 0, duration: 300.ms),
-
-          // Stats bar
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              border: Border(
-                bottom: BorderSide(
-                  color: Theme.of(context).colorScheme.outlineVariant,
-                  width: 1,
-                ),
-              ),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.article_outlined,
-                  size: 16,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  '${filteredLines.length} lines',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
-                ),
-                if (_searchQuery.isNotEmpty || _filter != 'all') ...[
-                  const SizedBox(width: 16),
-                  Icon(
-                    Icons.filter_alt,
-                    size: 16,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Filtered',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.primary,
-                      fontWeight: FontWeight.w600,
-                    ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Icon(Icons.tune_rounded, size: 17, color: colors.primary),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Recording ${AppLogger.currentLevel.name.toUpperCase()} '
+                          'and more severe events • ${filtered.length} visible',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: colors.onSurfaceVariant),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
-              ],
+              ),
             ),
-          ),
-
-          // Logs content
+          ).animate().fadeIn(duration: 220.ms),
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
-                : filteredLines.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.search_off,
-                          size: 64,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          _logContent.isEmpty
-                              ? 'No logs available'
-                              : 'No matching logs found',
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurfaceVariant,
-                              ),
-                        ),
-                      ],
-                    ),
-                  )
+                : filtered.isEmpty
+                ? _EmptyLogs(hasLogs: _entries.isNotEmpty)
                 : ListView.builder(
                     padding: const EdgeInsets.all(16),
-                    itemCount: filteredLines.length,
-                    itemBuilder: (context, index) {
-                      final line = filteredLines[index];
-                      if (line.trim().isEmpty) return const SizedBox.shrink();
-
-                      return Container(
-                            margin: const EdgeInsets.only(bottom: 4),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 8,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .surfaceContainerHighest
-                                  .withValues(alpha: 0.5),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border(
-                                left: BorderSide(
-                                  color: _getLineColor(line),
-                                  width: 3,
-                                ),
+                    itemCount: filtered.length,
+                    itemBuilder: (context, index) =>
+                        _LogEventCard(
+                              entry: filtered[index],
+                              timestamp: _timestampFormat.format(
+                                filtered[index].timestamp.toLocal(),
                               ),
-                            ),
-                            child: SelectableText(
-                              line,
-                              style: TextStyle(
-                                fontFamily: 'monospace',
-                                fontSize: 12,
-                                height: 1.4,
-                                color: Theme.of(context).colorScheme.onSurface,
+                            )
+                            .animate()
+                            .fadeIn(
+                              delay: Duration(
+                                milliseconds: (index * 8).clamp(0, 120).toInt(),
                               ),
-                            ),
-                          )
-                          .animate()
-                          .fadeIn(delay: (index * 10).ms, duration: 200.ms)
-                          .slideX(
-                            begin: -0.1,
-                            end: 0,
-                            delay: (index * 10).ms,
-                            duration: 200.ms,
-                          );
-                    },
+                              duration: 180.ms,
+                            )
+                            .slideY(begin: 0.05, end: 0),
                   ),
           ),
         ],
@@ -326,33 +233,152 @@ class _LogsViewerPageState extends State<LogsViewerPage> {
     );
   }
 
-  Widget _buildFilterChip(String label, String value, [Color? color]) {
-    final isSelected = _filter == value;
-
+  Widget _filterChip({required String label, required LogLevel? level}) {
+    final selected = _filter == level;
+    final color = level == null ? null : _levelColor(level, context);
     return FilterChip(
+      selected: selected,
       label: Text(label),
-      selected: isSelected,
-      onSelected: (selected) {
-        setState(() {
-          _filter = selected ? value : 'all';
-        });
-      },
-      backgroundColor: color?.withValues(alpha: 0.1),
-      selectedColor:
-          color?.withValues(alpha: 0.3) ??
-          Theme.of(context).colorScheme.primaryContainer,
-      checkmarkColor: color ?? Theme.of(context).colorScheme.primary,
-      labelStyle: TextStyle(
-        color: isSelected
-            ? (color ?? Theme.of(context).colorScheme.primary)
-            : Theme.of(context).colorScheme.onSurface,
-        fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+      avatar: level == null
+          ? const Icon(Icons.all_inclusive_rounded, size: 18)
+          : Icon(_levelIcon(level), size: 18, color: color),
+      onSelected: (_) => setState(() => _filter = level),
+      selectedColor: color?.withValues(alpha: 0.18),
+      checkmarkColor: color,
+    );
+  }
+}
+
+class _LogEventCard extends StatelessWidget {
+  const _LogEventCard({required this.entry, required this.timestamp});
+
+  final AppLogEntry entry;
+  final String timestamp;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final color = entry.level == null
+        ? colors.outline
+        : _levelColor(entry.level!, context);
+    final hasDetails =
+        entry.error?.isNotEmpty == true || entry.stackTrace?.isNotEmpty == true;
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              entry.level == null
+                  ? Icons.power_settings_new_rounded
+                  : _levelIcon(entry.level!),
+              size: 19,
+              color: color,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: SelectableText(
+                entry.message,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  height: 1.4,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              timestamp,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: colors.onSurfaceVariant,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+          ],
+        ),
+        if (hasDetails) ...[
+          const SizedBox(height: 10),
+          ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            childrenPadding: const EdgeInsets.only(bottom: 8),
+            dense: true,
+            title: const Text('Technical details'),
+            children: [
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: colors.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: SelectableText(
+                  [
+                    if (entry.error?.isNotEmpty == true) entry.error!,
+                    if (entry.stackTrace?.isNotEmpty == true) entry.stackTrace!,
+                  ].join('\n\n'),
+                  style: const TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 12,
+                    height: 1.45,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(18),
+        border: Border(left: BorderSide(color: color, width: 3)),
       ),
-      side: BorderSide(
-        color: isSelected
-            ? (color ?? Theme.of(context).colorScheme.primary)
-            : Theme.of(context).colorScheme.outline,
+      child: content,
+    );
+  }
+}
+
+class _EmptyLogs extends StatelessWidget {
+  const _EmptyLogs({required this.hasLogs});
+
+  final bool hasLogs;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.manage_search_rounded, size: 56),
+          const SizedBox(height: 14),
+          Text(hasLogs ? 'No matching log events' : 'No logs recorded yet'),
+        ],
       ),
     );
   }
 }
+
+Color _levelColor(LogLevel level, BuildContext context) {
+  final colors = Theme.of(context).colorScheme;
+  return switch (level) {
+    LogLevel.trace => colors.outline,
+    LogLevel.debug => colors.tertiary,
+    LogLevel.info => colors.primary,
+    LogLevel.warning => Colors.orange.shade700,
+    LogLevel.error => colors.error,
+    LogLevel.fatal => Colors.purple.shade400,
+  };
+}
+
+IconData _levelIcon(LogLevel level) => switch (level) {
+  LogLevel.trace => Icons.route_outlined,
+  LogLevel.debug => Icons.bug_report_outlined,
+  LogLevel.info => Icons.info_outline_rounded,
+  LogLevel.warning => Icons.warning_amber_rounded,
+  LogLevel.error => Icons.error_outline_rounded,
+  LogLevel.fatal => Icons.dangerous_outlined,
+};

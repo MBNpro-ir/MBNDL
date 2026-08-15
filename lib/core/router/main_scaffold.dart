@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../theme/app_appearance.dart';
+import '../theme/glass_surface.dart';
+
 class MainScaffold extends StatefulWidget {
   const MainScaffold({super.key, required this.child});
 
@@ -86,6 +89,9 @@ class _MainScaffoldState extends State<MainScaffold> {
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
     final selectedIndex = _currentIndex(context);
+    final appearance =
+        Theme.of(context).extension<AppSurfaceTheme>()?.settings ??
+        const AppAppearanceSettings();
     final useRail = width >= 760;
     final isPrimaryPage = _isPrimaryPage(context);
     final swipableChild = !useRail && isPrimaryPage
@@ -103,20 +109,33 @@ class _MainScaffoldState extends State<MainScaffold> {
         : widget.child;
 
     if (!useRail) {
+      final navigation = NavigationBar(
+        backgroundColor: appearance.floatingNavigation
+            ? Colors.transparent
+            : null,
+        selectedIndex: selectedIndex,
+        onDestinationSelected: (index) => _select(context, index),
+        destinations: [
+          for (final destination in _destinations)
+            NavigationDestination(
+              icon: Icon(destination.icon),
+              selectedIcon: Icon(destination.selectedIcon),
+              label: destination.label,
+            ),
+        ],
+      );
       return Scaffold(
+        extendBody: appearance.floatingNavigation,
         body: swipableChild,
-        bottomNavigationBar: NavigationBar(
-          selectedIndex: selectedIndex,
-          onDestinationSelected: (index) => _select(context, index),
-          destinations: [
-            for (final destination in _destinations)
-              NavigationDestination(
-                icon: Icon(destination.icon),
-                selectedIcon: Icon(destination.selectedIcon),
-                label: destination.label,
-              ),
-          ],
-        ),
+        bottomNavigationBar: appearance.floatingNavigation
+            ? SafeArea(
+                minimum: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+                child: GlassSurface(
+                  borderRadius: BorderRadius.circular(34),
+                  child: navigation,
+                ),
+              )
+            : navigation,
       );
     }
 
@@ -126,53 +145,55 @@ class _MainScaffoldState extends State<MainScaffold> {
       body: SafeArea(
         child: Row(
           children: [
-            NavigationRail(
-              extended: extended,
-              minWidth: 80,
-              minExtendedWidth: 224,
-              selectedIndex: selectedIndex,
-              onDestinationSelected: (index) => _select(context, index),
-              groupAlignment: -0.72,
-              leading: Padding(
-                padding: const EdgeInsets.only(top: 12, bottom: 24),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        color: colors.primaryContainer,
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Icon(
-                        Icons.download_rounded,
-                        color: colors.onPrimaryContainer,
-                      ),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: GlassSurface(
+                borderRadius: BorderRadius.circular(30),
+                child: NavigationRail(
+                  extended: extended,
+                  minWidth: 72,
+                  minExtendedWidth: 212,
+                  selectedIndex: selectedIndex,
+                  onDestinationSelected: (index) => _select(context, index),
+                  groupAlignment: -0.72,
+                  leading: Padding(
+                    padding: const EdgeInsets.only(top: 12, bottom: 24),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: colors.primaryContainer,
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                          child: Icon(
+                            Icons.download_rounded,
+                            color: colors.onPrimaryContainer,
+                          ),
+                        ),
+                        if (extended) ...[
+                          const SizedBox(width: 12),
+                          Text(
+                            'MBNDL',
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w800),
+                          ),
+                        ],
+                      ],
                     ),
-                    if (extended) ...[
-                      const SizedBox(width: 12),
-                      Text(
-                        'MBNDL',
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w800),
+                  ),
+                  destinations: [
+                    for (final destination in _destinations)
+                      NavigationRailDestination(
+                        icon: Icon(destination.icon),
+                        selectedIcon: Icon(destination.selectedIcon),
+                        label: Text(destination.label),
                       ),
-                    ],
                   ],
                 ),
               ),
-              destinations: [
-                for (final destination in _destinations)
-                  NavigationRailDestination(
-                    icon: Icon(destination.icon),
-                    selectedIcon: Icon(destination.selectedIcon),
-                    label: Text(destination.label),
-                  ),
-              ],
-            ),
-            VerticalDivider(
-              width: 1,
-              color: colors.outlineVariant.withValues(alpha: 0.45),
             ),
             Expanded(child: swipableChild),
           ],

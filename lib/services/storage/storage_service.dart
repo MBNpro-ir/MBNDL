@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../logger/app_logger.dart';
 
@@ -14,7 +15,48 @@ class StorageService {
 
   static Future<void> initialize() async {
     _prefs = await SharedPreferences.getInstance();
+    final fallback = kDebugMode ? LogLevel.trace : LogLevel.warning;
+    final savedLevel = _prefs!.getInt('log_level');
+    AppLogger.setLogLevel(
+      LogLevel.values.elementAtOrNull(savedLevel ?? fallback.index) ?? fallback,
+    );
     AppLogger.info('Storage service initialized');
+  }
+
+  Map<String, Object> exportValues(Set<String> keys) {
+    final values = <String, Object>{};
+    for (final key in keys) {
+      final value = _prefs?.get(key);
+      if (value is bool ||
+          value is int ||
+          value is double ||
+          value is String ||
+          value is List<String>) {
+        values[key] = value as Object;
+      }
+    }
+    return values;
+  }
+
+  Future<void> importValues(
+    Map<String, dynamic> values, {
+    required Set<String> allowedKeys,
+  }) async {
+    for (final entry in values.entries) {
+      if (!allowedKeys.contains(entry.key)) continue;
+      final value = entry.value;
+      if (value is bool) {
+        await _prefs!.setBool(entry.key, value);
+      } else if (value is int) {
+        await _prefs!.setInt(entry.key, value);
+      } else if (value is double) {
+        await _prefs!.setDouble(entry.key, value);
+      } else if (value is String) {
+        await _prefs!.setString(entry.key, value);
+      } else if (value is List && value.every((item) => item is String)) {
+        await _prefs!.setStringList(entry.key, value.cast<String>());
+      }
+    }
   }
 
   // Generic methods

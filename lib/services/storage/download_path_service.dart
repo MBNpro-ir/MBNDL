@@ -115,17 +115,33 @@ class DownloadPathService {
   Future<bool> openDownloadLocation(String path) async {
     try {
       if (Platform.isAndroid) {
-        return await _androidChannel.invokeMethod<bool>('openDownloads') ??
-            false;
+        // Android activity launch results are not a reliable success signal;
+        // reaching the next line means the platform accepted the request.
+        await _androidChannel.invokeMethod<dynamic>('openDownloads');
+        return true;
       }
+      final directory = Directory(path);
+      if (!await directory.exists()) await directory.create(recursive: true);
       if (Platform.isWindows) {
-        return (await Process.run('explorer', [path])).exitCode == 0;
+        // Explorer frequently returns a non-zero exit code after successfully
+        // handing the folder to an existing window. Detached launch is the
+        // correct success boundary for a shell UI process.
+        await Process.start('explorer.exe', [
+          directory.path,
+        ], mode: ProcessStartMode.detached);
+        return true;
       }
       if (Platform.isMacOS) {
-        return (await Process.run('open', [path])).exitCode == 0;
+        await Process.start('open', [
+          directory.path,
+        ], mode: ProcessStartMode.detached);
+        return true;
       }
       if (Platform.isLinux) {
-        return (await Process.run('xdg-open', [path])).exitCode == 0;
+        await Process.start('xdg-open', [
+          directory.path,
+        ], mode: ProcessStartMode.detached);
+        return true;
       }
       return false;
     } catch (error, stackTrace) {

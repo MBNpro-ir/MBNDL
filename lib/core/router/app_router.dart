@@ -4,6 +4,7 @@ import '../../features/home/presentation/home_page.dart';
 import '../../features/history/presentation/history_page.dart';
 import '../../features/settings/presentation/settings_page.dart';
 import '../../features/settings/presentation/ytdlp_settings_page.dart';
+import '../theme/app_appearance.dart';
 import 'main_scaffold.dart';
 
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -63,13 +64,39 @@ Page _buildPageWithAnimation({
   required GoRouterState state,
   required Widget child,
 }) {
+  final appearance = Theme.of(context).extension<AppSurfaceTheme>()?.settings;
+  final reduceMotion =
+      appearance?.motionMode == AppMotionMode.reduced ||
+      (appearance?.motionMode == AppMotionMode.system &&
+          MediaQuery.maybeOf(context)?.disableAnimations == true);
   return CustomTransitionPage(
     key: state.pageKey,
     child: child,
+    transitionDuration: reduceMotion
+        ? Duration.zero
+        : const Duration(milliseconds: 340),
+    reverseTransitionDuration: reduceMotion
+        ? Duration.zero
+        : const Duration(milliseconds: 240),
     transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      if (reduceMotion) return child;
+      final curved = CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic,
+      );
       return FadeTransition(
-        opacity: CurveTween(curve: Curves.easeInOut).animate(animation),
-        child: child,
+        opacity: curved,
+        child: SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0.025, 0),
+            end: Offset.zero,
+          ).animate(curved),
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.992, end: 1).animate(curved),
+            child: child,
+          ),
+        ),
       );
     },
   );

@@ -4,16 +4,20 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import '../../shared/models/download_item.dart';
+import '../../shared/models/media_source.dart';
 import '../../shared/models/video_format.dart';
 import '../../shared/utils/media_url_classifier.dart';
 import '../../features/settings/domain/yt_dlp_settings.dart';
 import '../logger/app_logger.dart';
+import '../logger/log_sanitizer.dart';
+import '../network/windows_system_proxy_service.dart';
 import '../database/database_service.dart';
 import '../storage/cookie_storage_service.dart';
 import 'ytdlp_manager.dart';
 import 'ffmpeg_manager.dart';
 import 'android_ytdlp_service.dart';
 import 'download_error_mapper.dart';
+import 'media_source_resolver.dart';
 
 class DownloadService {
   static DownloadService? _instance;
@@ -92,6 +96,9 @@ class DownloadService {
   }
 
   bool get isYtDlpAvailable => _ytDlpPath != null;
+
+  Future<ResolvedMediaSource> resolveMediaSource(String url) =>
+      MediaSourceResolver.instance.resolve(url);
 
   Future<bool> ensureFFmpegReady({
     void Function(double progress)? onProgress,
@@ -183,12 +190,16 @@ class DownloadService {
     String url, {
     YtDlpSettings? settings,
   }) async {
+    final source = await resolveMediaSource(url);
+    final effectiveUrl = source.effectiveUrl;
+
     // Use the native Android implementation.
     if (Platform.isAndroid) {
-      return AndroidYtDlpService.instance.extractVideoInfo(
-        url,
+      final info = await AndroidYtDlpService.instance.extractVideoInfo(
+        effectiveUrl,
         settings: settings,
       );
+      return _decorateSourceInfo(info, source);
     }
 
     // Desktop implementation
@@ -196,15 +207,17 @@ class DownloadService {
       throw Exception('yt-dlp is not available');
     }
 
-    AppLogger.info('Extracting video info for: $url');
+    AppLogger.info(
+      'Extracting ${source.provider.displayName} media information',
+    );
 
     try {
-      final jsonData = await _extractDesktopData(url, settings);
+      final jsonData = await _extractDesktopData(effectiveUrl, settings);
       final representative = _representativeEntry(jsonData);
       final isPlaylist = jsonData['_type'] == 'playlist';
       AppLogger.info('Video info extracted: ${jsonData['title']}');
 
-      return {
+      return _decorateSourceInfo({
         'title': jsonData['title'] ?? representative['title'] ?? 'Unknown',
         'id': representative['id'],
         'thumbnail': representative['thumbnail'],
@@ -216,7 +229,7 @@ class DownloadService {
         'playlistCount':
             jsonData['playlist_count'] ??
             (jsonData['entries'] as List<dynamic>?)?.length,
-      };
+      }, source);
     } catch (e, stackTrace) {
       AppLogger.error('Error extracting video info', e, stackTrace);
       rethrow;
@@ -228,10 +241,13 @@ class DownloadService {
     String url, {
     YtDlpSettings? settings,
   }) async {
+    final source = await resolveMediaSource(url);
+    final effectiveUrl = source.effectiveUrl;
+
     // Use the native Android implementation.
     if (Platform.isAndroid) {
       return AndroidYtDlpService.instance.getAvailableFormats(
-        url,
+        effectiveUrl,
         settings: settings,
       );
     }
@@ -241,15 +257,17 @@ class DownloadService {
       throw Exception('yt-dlp is not available');
     }
 
-    AppLogger.info('Fetching available formats for: $url');
+    AppLogger.info('Fetching ${source.provider.displayName} formats');
 
     try {
-      final jsonData = await _extractDesktopData(url, settings);
+      final jsonData = await _extractDesktopData(effectiveUrl, settings);
       final formatsJson =
           _representativeEntry(jsonData)['formats'] as List<dynamic>?;
 
       if (formatsJson == null || formatsJson.isEmpty) {
-        AppLogger.warning('No formats found for URL: $url');
+        AppLogger.warning(
+          'No formats found for ${source.provider.displayName}',
+        );
         return [];
       }
 
@@ -265,6 +283,27 @@ class DownloadService {
     }
   }
 
+  Map<String, dynamic> _decorateSourceInfo(
+    Map<String, dynamic> info,
+    ResolvedMediaSource source,
+  ) {
+    final first = source.tracks.isEmpty ? null : source.tracks.first;
+    return {
+      ...info,
+      if (source.title?.isNotEmpty == true || first != null)
+        'title': source.title ?? first!.title,
+      if (source.thumbnail?.isNotEmpty == true || first?.thumbnail != null)
+        'thumbnail': source.thumbnail ?? first?.thumbnail,
+      'sourceProvider': source.provider.name,
+      'sourceProviderLabel': source.provider.displayName,
+      if (source.notice != null) 'sourceNotice': source.notice,
+      if (source.isCollection)
+        'catalogTracks': source.tracks.map((track) => track.toJson()).toList(),
+      if (source.isCollection) 'isPlaylist': true,
+      if (source.isCollection) 'playlistCount': source.tracks.length,
+    };
+  }
+
   Future<Map<String, dynamic>> _extractDesktopData(
     String url,
     YtDlpSettings? settings,
@@ -275,6 +314,9 @@ class DownloadService {
     ];
     if (!args.contains('--js-runtimes') && !args.contains('--no-js-runtimes')) {
       args.addAll(await _detectJsRuntime());
+    }
+    if (!args.contains('--proxy')) {
+      args.addAll(await WindowsSystemProxyService.instance.ytDlpArgsFor(url));
     }
 
     final selectedCookie = await CookieStorageService.instance
@@ -382,12 +424,16 @@ class DownloadService {
     required YtDlpSettings settings,
     required Function(DownloadItem) onUpdate,
   }) async {
+    final source = await resolveMediaSource(item.url);
+    final downloadUrl = source.effectiveUrl;
+
     // Use the native Android implementation.
     if (Platform.isAndroid) {
       return await AndroidYtDlpService.instance.startDownload(
         item: item,
         settings: settings,
         onUpdate: onUpdate,
+        effectiveUrl: downloadUrl,
       );
     }
 
@@ -477,7 +523,7 @@ class DownloadService {
       // Materialize the selected YouTube secret inside the guarded scope so
       // every early setup failure still removes the temporary plaintext file.
       cookieFilePath = await CookieStorageService.instance
-          .materializeSelectedCookieForUrl(item.url);
+          .materializeSelectedCookieForUrl(downloadUrl);
 
       // For separate video+audio downloads, download each file individually
       if (isSeparateDownload) {
@@ -538,7 +584,7 @@ class DownloadService {
             ]);
           }
 
-          args.add(item.url);
+          args.add(downloadUrl);
 
           // Audio will be downloaded after video completes (handled in exitCode == 0 section)
           AppLogger.info(
@@ -584,7 +630,7 @@ class DownloadService {
           ]);
         }
 
-        args.add(item.url);
+        args.add(downloadUrl);
       }
 
       // Settings rebuilt for separate streams above; add runtime, cookies and
@@ -600,16 +646,21 @@ class DownloadService {
       if (cookieFilePath != null) {
         sharedArgs.addAll(['--cookies', cookieFilePath]);
       }
-      final urlIndex = args.lastIndexOf(item.url);
+      if (!args.contains('--proxy')) {
+        sharedArgs.addAll(
+          await WindowsSystemProxyService.instance.ytDlpArgsFor(downloadUrl),
+        );
+      }
+      final urlIndex = args.lastIndexOf(downloadUrl);
       if (urlIndex >= 0) {
         args.insertAll(urlIndex, sharedArgs);
       } else {
-        args.addAll([...sharedArgs, item.url]);
+        args.addAll([...sharedArgs, downloadUrl]);
       }
 
       AppLogger.info('Starting download for: ${item.title}');
       AppLogger.info('Base output directory: $baseOutputDir');
-      AppLogger.debug('yt-dlp args: ${args.join(' ')}');
+      AppLogger.debug('yt-dlp args: ${LogSanitizer.commandArgs(args)}');
 
       // Prepare environment with ffmpeg path
       Map<String, String>? environment;
@@ -656,7 +707,7 @@ class DownloadService {
           .transform(textDecoder)
           .transform(const LineSplitter())
           .listen((line) {
-            AppLogger.trace('yt-dlp: $line');
+            AppLogger.toolOutput('yt-dlp', line, fallback: LogLevel.trace);
 
             // Extract progress
             final progressMatch = progressRegex.firstMatch(line);
@@ -689,7 +740,11 @@ class DownloadService {
           .transform(textDecoder)
           .transform(const LineSplitter())
           .listen((line) {
-            AppLogger.warning('yt-dlp stderr: $line');
+            AppLogger.toolOutput(
+              'yt-dlp stderr',
+              line,
+              fallback: LogLevel.warning,
+            );
             stderrLines.add(line);
             if (stderrLines.length > 80) stderrLines.removeAt(0);
           });
@@ -743,10 +798,12 @@ class DownloadService {
                 '_audio.%(ext)s',
               ),
               ...sharedArgs,
-              item.url,
+              downloadUrl,
             ];
 
-            AppLogger.debug('Audio download args: ${audioArgs.join(' ')}');
+            AppLogger.debug(
+              'Audio download args: ${LogSanitizer.commandArgs(audioArgs)}',
+            );
 
             // Start audio download process
             final audioProcess = await Process.start(
@@ -769,7 +826,11 @@ class DownloadService {
                 .transform(textDecoder)
                 .transform(const LineSplitter())
                 .listen((line) {
-                  AppLogger.trace('yt-dlp audio: $line');
+                  AppLogger.toolOutput(
+                    'yt-dlp audio',
+                    line,
+                    fallback: LogLevel.trace,
+                  );
 
                   // Extract audio progress (map it to 50-100% range)
                   final progressMatch = progressRegex.firstMatch(line);
@@ -799,7 +860,11 @@ class DownloadService {
                 .transform(textDecoder)
                 .transform(const LineSplitter())
                 .listen((line) {
-                  AppLogger.warning('yt-dlp audio stderr: $line');
+                  AppLogger.toolOutput(
+                    'yt-dlp audio stderr',
+                    line,
+                    fallback: LogLevel.warning,
+                  );
                 });
 
             // Wait for audio download to complete

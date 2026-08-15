@@ -15,8 +15,10 @@ class PresetsStorageService {
 
   File? _presetsFile;
   List<CustomPreset> _customPresets = [];
+  bool _initialized = false;
 
   Future<void> initialize() async {
+    if (_initialized) return;
     try {
       final appData =
           Platform.environment['APPDATA'] ??
@@ -37,6 +39,7 @@ class PresetsStorageService {
 
       // Load custom presets
       await loadPresets();
+      _initialized = true;
     } catch (e) {
       AppLogger.error('Failed to initialize presets storage', e);
       rethrow;
@@ -95,6 +98,24 @@ class PresetsStorageService {
     _customPresets.add(preset);
     await savePresets();
     AppLogger.info('Added custom preset: ${preset.name}');
+  }
+
+  /// Merge imported presets by stable id and write the file once.
+  Future<int> mergePresets(Iterable<CustomPreset> presets) async {
+    var changed = 0;
+    for (final imported in presets) {
+      if (imported.isBuiltIn) continue;
+      final index = _customPresets.indexWhere((item) => item.id == imported.id);
+      if (index >= 0) {
+        _customPresets[index] = imported;
+      } else {
+        _customPresets.add(imported);
+      }
+      changed++;
+    }
+    if (changed > 0) await savePresets();
+    AppLogger.info('Merged $changed custom presets');
+    return changed;
   }
 
   Future<void> updatePreset(CustomPreset preset) async {

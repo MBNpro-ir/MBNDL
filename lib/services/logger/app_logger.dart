@@ -1,171 +1,197 @@
 import 'dart:io';
+
 import 'package:flutter/foundation.dart';
-import 'package:logger/logger.dart';
 import 'package:path_provider/path_provider.dart';
 
-enum LogLevel { trace, debug, info, warning, error, fatal }
+import 'app_log_entry.dart';
+import 'log_level.dart';
+import 'log_sanitizer.dart';
+
+export 'log_level.dart';
 
 class AppLogger {
-  static AppLogger? _instance;
-  static Logger? _logger;
+  AppLogger._();
+
+  static const int _maxLogBytes = 2 * 1024 * 1024;
   static File? _logFile;
   static LogLevel _currentLevel = kDebugMode
       ? LogLevel.trace
       : LogLevel.warning;
 
-  AppLogger._();
-
-  static AppLogger get instance {
-    _instance ??= AppLogger._();
-    return _instance!;
-  }
-
   static Future<void> initialize() async {
     try {
-      // Use AppData on Windows
-      String logPath;
-      if (Platform.isWindows) {
-        final appData = Platform.environment['APPDATA'];
-        if (appData == null) {
-          throw Exception('APPDATA environment variable not found');
-        }
-        logPath =
-            '$appData${Platform.pathSeparator}MBNDownloader${Platform.pathSeparator}logs';
-      } else if (Platform.isAndroid || Platform.isIOS) {
-        // For mobile, use app-specific documents directory
-        final directory = await getApplicationDocumentsDirectory();
-        logPath =
-            '${directory.path}${Platform.pathSeparator}MBNDownloader${Platform.pathSeparator}logs';
-      } else {
-        // macOS, Linux
-        final directory = await getApplicationDocumentsDirectory();
-        logPath = '${directory.path}${Platform.pathSeparator}logs';
-      }
-
+      final logPath = await _resolveLogPath();
       final logDir = Directory(logPath);
-      if (!await logDir.exists()) {
-        await logDir.create(recursive: true);
-      }
-
+      await logDir.create(recursive: true);
       _logFile = File('$logPath${Platform.pathSeparator}app_log.txt');
-
-      // Clear log file on app start
-      await _logFile!.writeAsString('');
-
-      _logger = Logger(
-        filter: ProductionFilter(),
-        printer: PrettyPrinter(
-          methodCount: 2,
-          errorMethodCount: 8,
-          lineLength: 120,
-          colors: true,
-          printEmojis: true,
-          dateTimeFormat: DateTimeFormat.onlyTimeAndSinceStart,
+      await _rotateIfNeeded();
+      _append(
+        AppLogEntry(
+          timestamp: DateTime.now(),
+          message: 'Application started',
+          session: true,
         ),
-        output: _FileOutput(_logFile!),
       );
-
-      _writeToFile('=== App Started at ${DateTime.now()} ===\n');
-    } catch (e) {
-      debugPrint('Failed to initialize logger: $e');
+    } catch (error) {
+      debugPrint('Failed to initialize logger: $error');
     }
   }
 
-  static void setLogLevel(LogLevel level) {
-    _currentLevel = level;
+  static Future<String> _resolveLogPath() async {
+    if (Platform.isWindows) {
+      final appData = Platform.environment['APPDATA'];
+      if (appData == null) {
+        throw StateError('APPDATA environment variable not found');
+      }
+      return '$appData${Platform.pathSeparator}MBNDownloader'
+          '${Platform.pathSeparator}logs';
+    }
+    if (Platform.isAndroid || Platform.isIOS) {
+      final directory = await getApplicationDocumentsDirectory();
+      return '${directory.path}${Platform.pathSeparator}MBNDownloader'
+          '${Platform.pathSeparator}logs';
+    }
+    final directory = await getApplicationDocumentsDirectory();
+    return '${directory.path}${Platform.pathSeparator}logs';
   }
+
+  static Future<void> _rotateIfNeeded() async {
+    final file = _logFile;
+    if (file == null || !await file.exists()) return;
+    if (await file.length() < _maxLogBytes) return;
+    final previous = File('${file.path}.1');
+    if (await previous.exists()) await previous.delete();
+    await file.rename(previous.path);
+    _logFile = File(file.path);
+  }
+
+  static void setLogLevel(LogLevel level) => _currentLevel = level;
 
   static LogLevel get currentLevel => _currentLevel;
 
-  static bool _shouldLog(LogLevel level) {
-    return level.index >= _currentLevel.index;
+  @visibleForTesting
+  static bool shouldLog(LogLevel level, {LogLevel? threshold}) {
+    return level.index >= (threshold ?? _currentLevel).index;
   }
 
-  static void trace(String message, [dynamic error, StackTrace? stackTrace]) {
-    if (_shouldLog(LogLevel.trace)) {
-      _logger?.t(message, error: error, stackTrace: stackTrace);
-      _writeToFile(
-        '[TRACE] $message ${error != null ? '\nError: $error' : ''}',
-      );
+  static void trace(String message, [Object? error, StackTrace? stackTrace]) =>
+      _write(LogLevel.trace, message, error, stackTrace);
+
+  static void debug(String message, [Object? error, StackTrace? stackTrace]) =>
+      _write(LogLevel.debug, message, error, stackTrace);
+
+  static void info(String message, [Object? error, StackTrace? stackTrace]) =>
+      _write(LogLevel.info, message, error, stackTrace);
+
+  static void warning(
+    String message, [
+    Object? error,
+    StackTrace? stackTrace,
+  ]) => _write(LogLevel.warning, message, error, stackTrace);
+
+  static void error(String message, [Object? error, StackTrace? stackTrace]) =>
+      _write(LogLevel.error, message, error, stackTrace);
+
+  static void fatal(String message, [Object? error, StackTrace? stackTrace]) =>
+      _write(LogLevel.fatal, message, error, stackTrace);
+
+  /// Records a line emitted by yt-dlp/FFmpeg at the level declared by that
+  /// tool instead of assuming every stderr line is a warning.
+  static void toolOutput(
+    String tool,
+    String line, {
+    LogLevel fallback = LogLevel.debug,
+  }) {
+    final trimmed = line.trim();
+    if (trimmed.isEmpty) return;
+    _write(
+      levelForToolOutput(trimmed, fallback: fallback),
+      '$tool: $trimmed',
+      null,
+      null,
+    );
+  }
+
+  @visibleForTesting
+  static LogLevel levelForToolOutput(
+    String line, {
+    LogLevel fallback = LogLevel.debug,
+  }) {
+    final bracketed = RegExp(
+      r'^\[(trace|debug|info|warning|warn|error|fatal)\]',
+      caseSensitive: false,
+    ).firstMatch(line.trimLeft());
+    final prefixed =
+        bracketed ??
+        RegExp(
+          r'^(?:\[[^\]]+\]\s*)*(trace|debug|info|warning|warn|error|fatal)\b',
+          caseSensitive: false,
+        ).firstMatch(line.trimLeft());
+    final name = prefixed?.group(1)?.toLowerCase();
+    return switch (name) {
+      'trace' => LogLevel.trace,
+      'debug' => LogLevel.debug,
+      'info' => LogLevel.info,
+      'warning' || 'warn' => LogLevel.warning,
+      'error' => LogLevel.error,
+      'fatal' => LogLevel.fatal,
+      _ => fallback,
+    };
+  }
+
+  static void _write(
+    LogLevel level,
+    String message,
+    Object? error,
+    StackTrace? stackTrace,
+  ) {
+    if (!shouldLog(level)) return;
+    _append(
+      AppLogEntry(
+        timestamp: DateTime.now(),
+        level: level,
+        message: LogSanitizer.text(message.trim()),
+        error: error == null
+            ? null
+            : LogSanitizer.text(error.toString().trim()),
+        stackTrace: stackTrace == null
+            ? null
+            : LogSanitizer.text(stackTrace.toString().trim()),
+      ),
+    );
+  }
+
+  static void _append(AppLogEntry entry) {
+    final file = _logFile;
+    if (file == null) return;
+    try {
+      file.writeAsStringSync('${entry.toLine()}\n', mode: FileMode.append);
+    } catch (error) {
+      debugPrint('Failed to write to log file: $error');
     }
   }
 
-  static void debug(String message, [dynamic error, StackTrace? stackTrace]) {
-    if (_shouldLog(LogLevel.debug)) {
-      _logger?.d(message, error: error, stackTrace: stackTrace);
-      _writeToFile(
-        '[DEBUG] $message ${error != null ? '\nError: $error' : ''}',
-      );
-    }
-  }
-
-  static void info(String message, [dynamic error, StackTrace? stackTrace]) {
-    if (_shouldLog(LogLevel.info)) {
-      _logger?.i(message, error: error, stackTrace: stackTrace);
-      _writeToFile('[INFO] $message ${error != null ? '\nError: $error' : ''}');
-    }
-  }
-
-  static void warning(String message, [dynamic error, StackTrace? stackTrace]) {
-    if (_shouldLog(LogLevel.warning)) {
-      _logger?.w(message, error: error, stackTrace: stackTrace);
-      _writeToFile(
-        '[WARNING] $message ${error != null ? '\nError: $error' : ''}',
-      );
-    }
-  }
-
-  static void error(String message, [dynamic error, StackTrace? stackTrace]) {
-    if (_shouldLog(LogLevel.error)) {
-      _logger?.e(message, error: error, stackTrace: stackTrace);
-      _writeToFile(
-        '[ERROR] $message ${error != null ? '\nError: $error' : ''}\n${stackTrace ?? ''}',
-      );
-    }
-  }
-
-  static void fatal(String message, [dynamic error, StackTrace? stackTrace]) {
-    if (_shouldLog(LogLevel.fatal)) {
-      _logger?.f(message, error: error, stackTrace: stackTrace);
-      _writeToFile(
-        '[FATAL] $message ${error != null ? '\nError: $error' : ''}\n${stackTrace ?? ''}',
-      );
-    }
-  }
-
-  static void _writeToFile(String message) {
-    if (_logFile != null) {
-      try {
-        final timestamp = DateTime.now().toIso8601String();
-        _logFile!.writeAsStringSync(
-          '[$timestamp] $message\n',
-          mode: FileMode.append,
-        );
-      } catch (e) {
-        debugPrint('Failed to write to log file: $e');
-      }
-    }
-  }
-
-  static Future<String?> getLogFilePath() async {
-    return _logFile?.path;
-  }
+  static Future<String?> getLogFilePath() async => _logFile?.path;
 
   static Future<String> getLogContent() async {
-    if (_logFile != null && await _logFile!.exists()) {
-      return await _logFile!.readAsString();
-    }
+    final file = _logFile;
+    if (file != null && await file.exists()) return file.readAsString();
     return '';
   }
-}
 
-class _FileOutput extends LogOutput {
-  final File file;
+  static Future<List<AppLogEntry>> getLogEntries() async =>
+      AppLogEntry.parseContent(await getLogContent());
 
-  _FileOutput(this.file);
-
-  @override
-  void output(OutputEvent event) {
-    // Already handled by _writeToFile method
+  static Future<void> clear() async {
+    final file = _logFile;
+    if (file == null) return;
+    await file.writeAsString('');
+    _append(
+      AppLogEntry(
+        timestamp: DateTime.now(),
+        message: 'Logs cleared',
+        session: true,
+      ),
+    );
   }
 }

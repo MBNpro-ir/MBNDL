@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../core/theme/app_appearance.dart';
 import '../../core/theme/app_theme_mode.dart';
 import '../../features/settings/domain/yt_dlp_settings.dart';
 import '../../services/logger/app_logger.dart';
@@ -55,6 +56,81 @@ class ThemeColorNotifier extends Notifier<AppThemeColor> {
   Future<void> setThemeColor(AppThemeColor color) async {
     state = color;
     await StorageService.instance.setInt('theme_color', color.index);
+  }
+}
+
+final appearanceSettingsProvider =
+    NotifierProvider<AppearanceSettingsNotifier, AppAppearanceSettings>(
+      AppearanceSettingsNotifier.new,
+    );
+
+class AppearanceSettingsNotifier extends Notifier<AppAppearanceSettings> {
+  @override
+  AppAppearanceSettings build() {
+    final storage = StorageService.instance;
+    final legacyEnabled =
+        storage.getBool('liquid_glass_enabled', defaultValue: false) ?? false;
+    final styleIndex = storage.getInt(
+      'surface_style',
+      defaultValue: legacyEnabled
+          ? AppSurfaceStyle.liquidGlass.index
+          : AppSurfaceStyle.expressive.index,
+    );
+    return AppAppearanceSettings(
+      surfaceStyle:
+          AppSurfaceStyle.values.elementAtOrNull(styleIndex ?? 0) ??
+          AppSurfaceStyle.expressive,
+      glassQuality:
+          GlassQuality.values.elementAtOrNull(
+            storage.getInt(
+                  'glass_quality',
+                  defaultValue: GlassQuality.adaptive.index,
+                ) ??
+                GlassQuality.adaptive.index,
+          ) ??
+          GlassQuality.adaptive,
+      glassBlur: storage.getDouble('glass_blur', defaultValue: 18) ?? 18,
+      glassOpacity:
+          storage.getDouble('glass_opacity', defaultValue: 0.64) ?? 0.64,
+      glassVibrancy:
+          storage.getDouble('glass_vibrancy', defaultValue: 0.55) ?? 0.55,
+      glassRefraction:
+          storage.getDouble('glass_refraction', defaultValue: 0.42) ?? 0.42,
+      chromaticAberration:
+          storage.getBool('glass_chromatic_aberration', defaultValue: true) ??
+          true,
+      depthEffect:
+          storage.getBool('glass_depth_effect', defaultValue: true) ?? true,
+      floatingNavigation:
+          storage.getBool('floating_navigation', defaultValue: true) ?? true,
+      motionMode:
+          AppMotionMode.values.elementAtOrNull(
+            storage.getInt(
+                  'motion_mode',
+                  defaultValue: AppMotionMode.system.index,
+                ) ??
+                AppMotionMode.system.index,
+          ) ??
+          AppMotionMode.system,
+    );
+  }
+
+  Future<void> update(AppAppearanceSettings value) async {
+    state = value;
+    final storage = StorageService.instance;
+    await Future.wait([
+      storage.setInt('surface_style', value.surfaceStyle.index),
+      storage.setBool('liquid_glass_enabled', value.liquidGlassEnabled),
+      storage.setInt('glass_quality', value.glassQuality.index),
+      storage.setDouble('glass_blur', value.glassBlur),
+      storage.setDouble('glass_opacity', value.glassOpacity),
+      storage.setDouble('glass_vibrancy', value.glassVibrancy),
+      storage.setDouble('glass_refraction', value.glassRefraction),
+      storage.setBool('glass_chromatic_aberration', value.chromaticAberration),
+      storage.setBool('glass_depth_effect', value.depthEffect),
+      storage.setBool('floating_navigation', value.floatingNavigation),
+      storage.setInt('motion_mode', value.motionMode.index),
+    ]);
   }
 }
 

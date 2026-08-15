@@ -20,6 +20,7 @@ import '../../../shared/providers/recent_links_provider.dart';
 import '../../../shared/providers/settings_provider.dart';
 import '../../../shared/providers/youtube_auth_provider.dart';
 import '../../../shared/utils/media_url_classifier.dart';
+import '../../../core/theme/glass_surface.dart';
 import '../../settings/widgets/quick_preset_selector.dart';
 import 'format_selection_page.dart';
 
@@ -151,6 +152,8 @@ class _HomePageState extends ConsumerState<HomePage> {
         thumbnail: thumbnail,
         formats: formats,
         mediaId: info['id']?.toString(),
+        sourceNotice: info['sourceNotice']?.toString(),
+        catalogTracks: _readCatalogTracks(info),
       );
     } catch (error, stackTrace) {
       AppLogger.error('Could not inspect URL', error, stackTrace);
@@ -228,6 +231,8 @@ class _HomePageState extends ConsumerState<HomePage> {
         thumbnail: link.thumbnail,
         formats: formats,
         mediaId: info['id']?.toString(),
+        sourceNotice: info['sourceNotice']?.toString(),
+        catalogTracks: _readCatalogTracks(info),
       );
     } catch (error, stackTrace) {
       AppLogger.error('Could not open cached formats', error, stackTrace);
@@ -241,6 +246,8 @@ class _HomePageState extends ConsumerState<HomePage> {
     required String? thumbnail,
     required List<VideoFormat> formats,
     String? mediaId,
+    String? sourceNotice,
+    List<Map<String, dynamic>> catalogTracks = const [],
   }) async {
     final previousDownloads = <String, int>{};
     final downloads = ref.read(downloadsProvider).asData?.value ?? const [];
@@ -286,6 +293,8 @@ class _HomePageState extends ConsumerState<HomePage> {
               formats: formats,
               videoTitle: title,
               previousDownloads: previousDownloads,
+              sourceNotice: sourceNotice,
+              batchItemCount: catalogTracks.isEmpty ? 1 : catalogTracks.length,
             ),
           ),
         );
@@ -295,6 +304,7 @@ class _HomePageState extends ConsumerState<HomePage> {
       title: title,
       thumbnail: thumbnail,
       selection: selection,
+      catalogTracks: catalogTracks,
     );
   }
 
@@ -303,45 +313,63 @@ class _HomePageState extends ConsumerState<HomePage> {
     required String title,
     required String? thumbnail,
     required FormatSelectionResult selection,
+    List<Map<String, dynamic>> catalogTracks = const [],
   }) async {
     final baseSettings = ref.read(ytDlpSettingsProvider);
     final notifier = ref.read(downloadsProvider.notifier);
 
     try {
-      for (final job in selection.jobs) {
-        final format = job.primaryFormat;
-        final item = DownloadItem(
-          url: url,
-          title: title,
-          thumbnail: thumbnail,
-          status: DownloadStatus.pending,
-          createdAt: DateTime.now(),
-          formatId: job.formatSelector,
-          formatLabel: job.label,
-          videoCodec: job.videoCodec,
-          audioCodec: job.audioCodec,
-          fileExtension: format.ext,
-          quality: job.quality,
-          downloadType: job.downloadType,
-        );
-        final settings = baseSettings.copyWith(
-          selectedFormatId: job.formatSelector,
-          downloadType: job.downloadType,
-          outputTemplate:
-              '%(title)s [%(id)s] [%(format_id)s]'
-              '${job.wasDownloadedBefore ? ' (copy ${job.previousDownloadCount + 1})' : ''}'
-              '.%(ext)s',
-          downloadSubtitlesEnabled: selection.downloadSubtitles,
-          downloadThumbnailEnabled: selection.downloadThumbnail,
-          extractAudio: job.downloadType == 'audio'
-              ? baseSettings.extractAudio
-              : false,
-        );
-        await notifier.enqueueDownload(item: item, settings: settings);
+      final targets = catalogTracks.isEmpty
+          ? [_DownloadTarget(url: url, title: title, thumbnail: thumbnail)]
+          : catalogTracks
+                .map(
+                  (track) => _DownloadTarget(
+                    url: track['sourceUrl']?.toString() ?? url,
+                    title: track['title']?.toString() ?? title,
+                    thumbnail: track['thumbnail']?.toString() ?? thumbnail,
+                  ),
+                )
+                .toList(growable: false);
+
+      for (final target in targets) {
+        for (final job in selection.jobs) {
+          final format = job.primaryFormat;
+          final selector = catalogTracks.isEmpty
+              ? job.formatSelector
+              : _portableBatchSelector(job);
+          final item = DownloadItem(
+            url: target.url,
+            title: target.title,
+            thumbnail: target.thumbnail,
+            status: DownloadStatus.pending,
+            createdAt: DateTime.now(),
+            formatId: selector,
+            formatLabel: job.label,
+            videoCodec: job.videoCodec,
+            audioCodec: job.audioCodec,
+            fileExtension: format.ext,
+            quality: job.quality,
+            downloadType: job.downloadType,
+          );
+          final settings = baseSettings.copyWith(
+            selectedFormatId: selector,
+            downloadType: job.downloadType,
+            outputTemplate:
+                '%(title)s [%(id)s] [%(format_id)s]'
+                '${job.wasDownloadedBefore ? ' (copy ${job.previousDownloadCount + 1})' : ''}'
+                '.%(ext)s',
+            downloadSubtitlesEnabled: selection.downloadSubtitles,
+            downloadThumbnailEnabled: selection.downloadThumbnail,
+            extractAudio: job.downloadType == 'audio'
+                ? baseSettings.extractAudio
+                : false,
+          );
+          await notifier.enqueueDownload(item: item, settings: settings);
+        }
       }
 
       if (!mounted) return;
-      final count = selection.jobs.length;
+      final count = selection.jobs.length * targets.length;
       _urlController.clear();
       setState(() => _isValidUrl = false);
       _showMessage('$count download${count == 1 ? '' : 's'} added.');
@@ -350,6 +378,33 @@ class _HomePageState extends ConsumerState<HomePage> {
       AppLogger.error('Could not queue downloads', error, stackTrace);
       if (mounted) _showFriendlyError(error);
     }
+  }
+
+  List<Map<String, dynamic>> _readCatalogTracks(Map<String, dynamic> info) {
+    final value = info['catalogTracks'];
+    if (value is! List) return const [];
+    return value
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .where(
+          (item) =>
+              item['sourceUrl']?.toString().isNotEmpty == true &&
+              item['title']?.toString().isNotEmpty == true,
+        )
+        .toList(growable: false);
+  }
+
+  String _portableBatchSelector(FormatDownloadJob job) {
+    if (job.downloadType == 'audio') return 'bestaudio/best';
+    final height = job.primaryFormat.height;
+    final limit = height == null ? '' : '[height<=$height]';
+    if (job.downloadType == 'video') {
+      return 'bestvideo$limit/bestvideo';
+    }
+    if (job.secondaryFormat != null) {
+      return 'bestvideo$limit+bestaudio/best$limit/best';
+    }
+    return 'best$limit/bestvideo$limit+bestaudio/best';
   }
 
   void _closeRootDialog() {
@@ -455,8 +510,9 @@ class _HomePageState extends ConsumerState<HomePage> {
               ),
               const SizedBox(height: 10),
               Text(
-                'MBNDL inspects the link first, then lets you choose several '
-                'ready-to-play, video-only, or audio-only formats.',
+                'YouTube, YouTube Music, SoundCloud, Bandcamp, Audiomack, '
+                'Audius, Mixcloud, podcasts, and other yt-dlp sites work '
+                'directly. Spotify uses a transparent smart match.',
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                   color: colors.onSurfaceVariant,
                   height: 1.45,
@@ -487,7 +543,8 @@ class _HomePageState extends ConsumerState<HomePage> {
               const SizedBox(height: 8),
               Text(
                 'Long links wrap across multiple lines so the full address '
-                'remains visible.',
+                'remains visible. Spotify albums and playlists are expanded '
+                'into individual queued tracks.',
                 style: TextStyle(color: colors.onSurfaceVariant),
               ),
               const SizedBox(height: 14),
@@ -576,9 +633,9 @@ class _HomePageState extends ConsumerState<HomePage> {
           ),
         );
 
-        return Card(
-          clipBehavior: Clip.antiAlias,
-          color: colors.surfaceContainerLow,
+        return GlassSurface(
+          borderRadius: BorderRadius.circular(28),
+          fallbackColor: colors.surfaceContainerLow,
           child: wide
               ? IntrinsicHeight(
                   child: Row(
@@ -586,7 +643,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                     children: [
                       Expanded(
                         child: ColoredBox(
-                          color: colors.primaryContainer.withValues(alpha: 0.6),
+                          color: colors.primaryContainer.withValues(alpha: 0.5),
                           child: intro,
                         ),
                       ),
@@ -598,7 +655,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     ColoredBox(
-                      color: colors.primaryContainer.withValues(alpha: 0.6),
+                      color: colors.primaryContainer.withValues(alpha: 0.5),
                       child: intro,
                     ),
                     form,
@@ -748,6 +805,18 @@ class _HomePageState extends ConsumerState<HomePage> {
       },
     );
   }
+}
+
+class _DownloadTarget {
+  const _DownloadTarget({
+    required this.url,
+    required this.title,
+    required this.thumbnail,
+  });
+
+  final String url;
+  final String title;
+  final String? thumbnail;
 }
 
 class _InspectionProgress extends StatelessWidget {

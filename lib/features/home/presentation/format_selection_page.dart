@@ -58,11 +58,15 @@ class FormatSelectionPage extends StatefulWidget {
     required this.formats,
     required this.videoTitle,
     this.previousDownloads = const {},
+    this.sourceNotice,
+    this.batchItemCount = 1,
   });
 
   final List<VideoFormat> formats;
   final String videoTitle;
   final Map<String, int> previousDownloads;
+  final String? sourceNotice;
+  final int batchItemCount;
 
   @override
   State<FormatSelectionPage> createState() => _FormatSelectionPageState();
@@ -278,6 +282,36 @@ class _FormatSelectionPageState extends State<FormatSelectionPage>
                       'when you move between tabs.',
                       style: TextStyle(color: colors.onSurfaceVariant),
                     ),
+                    if (widget.sourceNotice?.isNotEmpty == true) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: colors.tertiaryContainer,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              Icons.manage_search_rounded,
+                              color: colors.onTertiaryContainer,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                '${widget.sourceNotice}'
+                                '${widget.batchItemCount > 1 ? '\nThis choice will be applied to all ${widget.batchItemCount} items.' : ''}',
+                                style: TextStyle(
+                                  color: colors.onTertiaryContainer,
+                                  height: 1.35,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
